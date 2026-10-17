@@ -151,7 +151,81 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         playAnim?.cancel(); playScale = playTarget
     }
 
+    // ------------------------------------------------------------------ flip
+
+    /**
+     * HyperOS's track-change flip (MiuiMediaAlbumAnimationUtils + miuix FlipAnimation): the cover
+     * turns half a turn about its vertical axis on a Folme spring (damping 0.72, response 0.5s),
+     * forwards for next and backwards for previous; the new artwork takes over the face as it
+     * passes edge-on (90°), and the back half is drawn mirrored back so it reads the right way.
+     */
+    private var flipAngle = 0f
+    private var flipTarget = 0f
+    private var flipVelocity = 0f
+    private var flipLastNs = 0L
+    /** Shown until the flip passes edge-on, then [current] takes the face. */
+    private var flipFrom: Cover? = null
+    private var flipFromAngle = 0f
+    private val camera = android.graphics.Camera()
+    private val flipMatrix = Matrix()
+
+    private fun startFlip(from: Cover, dir: Int) {
+        // Land on the next multiple of 180 in the direction of travel, like FlipAnimation.
+        flipTarget = (kotlin.math.round(flipTarget / 180f) + dir) * 180f
+        flipFrom = from
+        flipFromAngle = flipAngle
+        flipLastNs = 0L
+        invalidate()
+    }
+
+    /** One step of the spring, on the frame clock. */
+    private fun stepFlip() {
+        if (flipAngle == flipTarget && flipVelocity == 0f) return
+        val now = System.nanoTime()
+        val dt = if (flipLastNs == 0L) 1f / 120f else ((now - flipLastNs) / 1e9f).coerceIn(0f, 1f / 30f)
+        flipLastNs = now
+        val k = (2f * Math.PI.toFloat() / FLIP_RESPONSE).let { it * it }
+        val damp = 4f * Math.PI.toFloat() * FLIP_DAMPING / FLIP_RESPONSE
+        var t = 0f
+        while (t < dt) {
+            val h = minOf(1f / 480f, dt - t)
+            val a = -k * (flipAngle - flipTarget) - damp * flipVelocity
+            flipVelocity += a * h
+            flipAngle += flipVelocity * h
+            t += h
+        }
+        if (kotlin.math.abs(flipAngle - flipTarget) < 0.05f && kotlin.math.abs(flipVelocity) < 1f) {
+            flipAngle = flipTarget
+            flipVelocity = 0f
+        }
+        if (flipFrom != null && kotlin.math.abs(flipAngle - flipFromAngle) >= 90f) flipFrom = null
+        invalidate()
+    }
+
+    /** The cover's turn about its own vertical axis through [cx], [cy]. */
+    private fun flipMatrix(cx: Float, cy: Float): Matrix? {
+        val a = flipAngle % 360f
+        if (a == 0f) return null
+        camera.save()
+        // View's default camera distance: 1280dp, in Camera's 72-per-inch units.
+        camera.setLocation(0f, 0f, -1280f * dens / 72f)
+        camera.rotateY(-a)
+        camera.getMatrix(flipMatrix)
+        camera.restore()
+        val norm = ((a % 360f) + 360f) % 360f
+        // Past edge-on the back is facing: mirror it back (FlipAnimation's scaleX = -1).
+        if (norm > 90f && norm < 270f) flipMatrix.preScale(-1f, 1f)
+        flipMatrix.preTranslate(-cx, -cy)
+        flipMatrix.postTranslate(cx, cy)
+        return flipMatrix
+    }
+
     private fun changeTo(next: Cover?) {
+        val prev = current
+        if (prev != null && next != null) {
+            val recent = android.os.SystemClock.uptimeMillis() - MediaArt.lastSkipAt < 3000
+            startFlip(prev, if (recent) MediaArt.lastSkip else 1)
+        }
         outgoing = current
         current = next
         swapAnim?.cancel()
@@ -181,8 +255,16 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         val radius = side * 0.08f
         val base = (1.14f - 0.14f * enter) * playScale
 
+        stepFlip()
         val out = outgoing
-        if (out != null) {
+        val flipping = flipFrom != null || flipAngle % 360f != 0f
+        val fm = flipMatrix(cx, cy)
+        if (fm != null) { c.save(); c.concat(fm) }
+        if (flipping && current != null) {
+            // The flip carries the change: one cover, whichever face is up, no crossfade.
+            val face = flipFrom ?: current!!
+            cover(c, face.bitmap, cx, cy, side, radius, base, enter)
+        } else if (out != null) {
             // The old cover gives way: down to SWAP_TO and out over the first two thirds.
             val t = (swap / 0.66f).coerceIn(0f, 1f)
             cover(c, out.bitmap, cx, cy, side, radius, base * (1f - (1f - SWAP_TO) * t),
@@ -190,7 +272,9 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         }
         val cur = current
         val inT = if (out == null) swap else ((swap - 0.15f) / 0.85f).coerceIn(0f, 1f)
-        if (cur != null) {
+        if (flipping && cur != null) {
+            Unit
+        } else if (cur != null) {
             cover(c, cur.bitmap, cx, cy, side, radius, base * (SWAP_FROM + (1f - SWAP_FROM) * inT),
                 enter * inT)
         } else {
@@ -199,6 +283,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
             placeholder.color = Color.argb((60 * enter * inT).toInt(), 255, 255, 255)
             c.drawRoundRect(rect, radius * s, radius * s, placeholder)
         }
+        if (fm != null) c.restore()
 
         // Title and artist beside the cover; they follow the cover's swap, sliding up a little.
         val textLeft = cx + side / 2f + h * 0.08f
@@ -509,6 +594,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         const val PAUSED_SCALE = 0.84f
         const val SWAP_FROM = 0.9f
         const val SWAP_TO = 0.86f
+        const val FLIP_DAMPING = 0.72f
+        const val FLIP_RESPONSE = 0.5f
         /** How much brighter than SystemUI's shader output the bar is drawn. */
         const val BAR_GAIN = 1.45f
         /** The head's glow against SystemUI's, after [BAR_GAIN]. */

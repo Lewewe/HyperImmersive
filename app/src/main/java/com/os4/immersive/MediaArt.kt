@@ -53,7 +53,13 @@ object MediaArt {
         val t = controller?.transportControls ?: return
         if (running) t.pause() else t.play()
     }
-    fun next() { controller?.transportControls?.skipToNext() }
+    fun next() { lastSkip = 1; lastSkipAt = android.os.SystemClock.uptimeMillis(); controller?.transportControls?.skipToNext() }
+
+    /** The last skip pressed here and when, so a track change can tell which way it went. */
+    @Volatile var lastSkip = 1
+        private set
+    @Volatile var lastSkipAt = 0L
+        private set
     fun seekTo(ms: Long) { controller?.transportControls?.seekTo(ms) }
 
     /** Track length in ms, or 0 when the player does not say. */
@@ -75,7 +81,7 @@ object MediaArt {
         val d = duration
         return if (d > 0) p.coerceIn(0L, d) else p.coerceAtLeast(0L)
     }
-    fun previous() { controller?.transportControls?.skipToPrevious() }
+    fun previous() { lastSkip = -1; lastSkipAt = android.os.SystemClock.uptimeMillis(); controller?.transportControls?.skipToPrevious() }
     fun removeListener(l: () -> Unit) { listeners -= l }
 
     /** Something is playing (or paused mid-track) and there is a picture of it. */
