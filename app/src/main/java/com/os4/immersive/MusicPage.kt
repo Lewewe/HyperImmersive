@@ -206,7 +206,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         drawText(c, out, textLeft, textW, h, enter * (1f - (swap / 0.5f).coerceIn(0f, 1f)), -1f)
         drawText(c, cur, textLeft, textW, h, enter * inT, 1f - inT)
         drawProgress(c, textLeft, textW, h, enter * (if (cur != null) inT else 0f))
-        drawControls(c, textLeft, h, enter)
+        drawControls(c, textLeft, textW, h, enter)
     }
 
     // ------------------------------------------------------------------ progress
@@ -380,13 +380,21 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         MediaArt.seekTo((f * d).toLong())
     }
 
-    private fun drawControls(c: Canvas, left: Float, h: Float, enter: Float) {
+    /**
+     * Spread across the progress bar's width: previous flush with its left end, next with its
+     * right end, play/pause in the middle - so the row mirrors the bar above it.
+     */
+    private fun drawControls(c: Canvas, left: Float, width: Float, h: Float, enter: Float) {
         val size = h * 0.11f
         val y = h * 0.78f
-        val gap = size * 1.3f
+        val edge = size * 0.6f
         icon.alpha = (255 * enter).toInt()
         for (i in 0..2) {
-            val cx = left + size / 2f + i * (size + gap)
+            val cx = when (i) {
+                0 -> left + edge
+                1 -> left + width / 2f
+                else -> left + width - edge
+            }
             buttons[i].set(cx - size, y - size, cx + size, y + size)
             val k = if (pressed == i) 0.85f else 1f
             c.save()
