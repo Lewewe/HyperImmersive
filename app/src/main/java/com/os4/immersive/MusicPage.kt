@@ -251,6 +251,9 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         }.getOrNull()
     }
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val barGain = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix(
+        floatArrayOf(BAR_GAIN, 0f, 0f, 0f, 0f, 0f, BAR_GAIN, 0f, 0f, 0f, 0f, 0f, BAR_GAIN, 0f, 0f,
+            0f, 0f, 0f, BAR_GAIN, 0f)))
 
     /**
      * HyperOS's media card seek row (miui_media_session: HyperProgressSeekBar between
@@ -262,9 +265,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         val d = MediaArt.duration
         if (alpha <= 0f || d <= 0L || width <= 0f) { bar.setEmpty(); return }
         val y = h * 0.56f
-        val timeW = h * 0.13f
-        val barLeft = left + timeW
-        val barRight = left + width - timeW
+        val barLeft = left
+        val barRight = left + width
         bar.set(barLeft, y - h * 0.04f, barRight, y + h * 0.04f)
         val now = android.os.SystemClock.uptimeMillis()
         val live = MediaArt.positionNow().toFloat() / d
@@ -287,21 +289,25 @@ class MusicPage(private val context: android.content.Context, private val dens: 
             rs.setFloatUniform("uTrackSize", cw, thick)
             rs.setFloatUniform("uTrackProgress", f)
             trackPaint.shader = rs
-            // Brighter than the widget's own 128/230 (dark style): measured against the lock
-            // screen card, which sits on the artwork's colour, the bar read dim on the blur.
-            trackPaint.alpha = ((200 + 55 * grip) * alpha).toInt().coerceIn(0, 255)
+            // The shader fills at 0.6 and the widget then draws it at 128/255 (dark style):
+            // on the blurred backdrop that read dim. Full paint alpha, and the shader's output
+            // lifted by [BAR_GAIN] (rgb and alpha alike - it is premultiplied white).
+            trackPaint.alpha = (255 * alpha).toInt().coerceIn(0, 255)
+            trackPaint.colorFilter = barGain
             c.save()
             c.translate(barLeft, y - ch / 2f)
             c.drawRect(0f, 0f, cw, ch, trackPaint)
             c.restore()
         } else drawOwnTrack(c, barLeft, barRight, y, thick, r, f, alpha)
 
-        timePaint.textSize = h * 0.042f
-        timePaint.color = Color.argb((230 * alpha).toInt(), 255, 255, 255)
-        timePaint.textAlign = Paint.Align.CENTER
-        val ty = y - (timePaint.descent() + timePaint.ascent()) / 2f
-        c.drawText(clock((f * d).toLong()), left + timeW / 2f, ty, timePaint)
-        c.drawText(clock(d), left + width - timeW / 2f, ty, timePaint)
+        // Under the bar, small, at its two ends - the earlier layout, which the user preferred.
+        timePaint.textSize = h * 0.034f
+        timePaint.color = Color.argb(((170 + 70 * grip) * alpha).toInt(), 255, 255, 255)
+        val ty = y + thick / 2f + h * 0.05f
+        timePaint.textAlign = Paint.Align.LEFT
+        c.drawText(clock((f * d).toLong()), barLeft, ty, timePaint)
+        timePaint.textAlign = Paint.Align.RIGHT
+        c.drawText(clock(d), barRight, ty, timePaint)
         timePaint.textAlign = Paint.Align.LEFT
     }
 
@@ -482,5 +488,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         const val PAUSED_SCALE = 0.84f
         const val SWAP_FROM = 0.9f
         const val SWAP_TO = 0.86f
+        /** How much brighter than SystemUI's shader output the bar is drawn. */
+        const val BAR_GAIN = 1.45f
     }
 }
