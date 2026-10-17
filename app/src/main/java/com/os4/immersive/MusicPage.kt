@@ -267,7 +267,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     private fun drawProgress(c: Canvas, left: Float, width: Float, h: Float, alpha: Float) {
         val d = MediaArt.duration
         if (alpha <= 0f || d <= 0L || width <= 0f) { bar.setEmpty(); return }
-        val y = h * 0.56f
+        val y = h * 0.56f + columnShift(h)
         val barLeft = left
         val barRight = left + width
         bar.set(barLeft, y - h * 0.04f, barRight, y + h * 0.04f)
@@ -386,7 +386,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
      */
     private fun drawControls(c: Canvas, left: Float, width: Float, h: Float, enter: Float) {
         val size = h * 0.11f
-        val y = h * 0.78f
+        val y = h * 0.78f + columnShift(h)
         icon.alpha = (255 * enter).toInt()
         for (i in 0..2) {
             val cx = when (i) {
@@ -461,7 +461,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         titlePaint.alpha = (255 * alpha).toInt()
         artistPaint.alpha = (170 * alpha).toInt()
         val t = TextUtils.ellipsize(title, titlePaint, width, TextUtils.TruncateAt.END).toString()
-        val base = h * 0.38f
+        val base = h * 0.38f + columnShift(h)
         c.drawText(t, left, base + dy, titlePaint)
         val artist = cover?.artist.orEmpty()
         if (artist.isNotEmpty()) {
@@ -492,6 +492,17 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         artPaint.alpha = (255 * alpha).toInt()
         c.drawRoundRect(rect, radius * scale, radius * scale, artPaint)
         artPaint.shader = null
+    }
+
+    /**
+     * Moves the text-and-controls column so it is centred on the cover: from the title's cap
+     * height (its baseline at 0.38h, 0.075h type) to the bottom of the play button (centred at
+     * 0.78h, half a 0.11h * 1.5 icon), its middle is put on the cover's, h / 2.
+     */
+    private fun columnShift(h: Float): Float {
+        val top = h * 0.38f - h * 0.075f * 0.75f
+        val bottom = h * 0.78f + h * 0.11f * 0.75f
+        return h / 2f - (top + bottom) / 2f
     }
 
     companion object {
