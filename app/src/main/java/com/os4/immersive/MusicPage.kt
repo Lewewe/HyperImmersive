@@ -605,15 +605,16 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         // A light drop shadow under each bar, so bars in the artwork's own colours still read on
         // its backdrop - a blurred dark copy drawn first (a shadow layer on a shaded paint is not
         // drawn by the GPU renderer).
-        visShadow.alpha = (110 * alpha).toInt()
+        // Not a drop shadow (it looked heavy): a faint, even shade right around each bar.
+        visShadow.alpha = (55 * alpha).toInt()
         if (visShadowRadius != width) {
             visShadowRadius = width
-            visShadow.maskFilter = android.graphics.BlurMaskFilter(width * 1.1f,
-                android.graphics.BlurMaskFilter.Blur.NORMAL)
+            visShadow.maskFilter = android.graphics.BlurMaskFilter(width * 0.8f,
+                android.graphics.BlurMaskFilter.Blur.OUTER)
         }
         for (pass in 0..1) {
             val paint = if (pass == 0) visShadow else visPaint
-            val dy = if (pass == 0) width * 0.5f else 0f
+            val dy = 0f
             for (i in 0 until 5) {
                 val bh = (box * (0.09f + 0.85f * Spectrum.levels[i])).coerceAtLeast(width)
                 val x = x0 + i * pitch
@@ -657,8 +658,9 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         // (which is made of the same colours) instead of as a grey halo on it.
         val tint = shadowTint(b)
         shadow.color = Color.argb((255 * alpha).toInt(), 0, 0, 0)
-        shadow.setShadowLayer(dens * (22f + 18f * depth), 0f, dens * (6f + 8f * depth),
-            Color.argb((150 * alpha).toInt(), Color.red(tint), Color.green(tint), Color.blue(tint)))
+        // Centred, not dropped: an even glow of shade on every side, only a hint lower.
+        shadow.setShadowLayer(dens * (24f + 12f * depth), 0f, dens * (1.5f + 1.5f * depth),
+            Color.argb((120 * alpha).toInt(), Color.red(tint), Color.green(tint), Color.blue(tint)))
         val inset = 2f * dens
         c.drawRoundRect(rect.left + inset, rect.top + inset, rect.right - inset,
             rect.bottom - inset, radius * scale, radius * scale, shadow)
