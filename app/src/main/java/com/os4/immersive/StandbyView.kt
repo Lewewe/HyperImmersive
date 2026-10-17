@@ -10,6 +10,7 @@ import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.text.format.DateFormat
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
@@ -57,6 +58,8 @@ class StandbyView(context: Context) : View(context) {
     private var userPaged = false
     private val onMedia: () -> Unit = {
         post {
+            // A track change or pause animates the cover; let it run at the full rate.
+            wake(3_000L)
             music.sync()
             // Music that turns up after StandBy opened (the session is read a moment late after
             // a restart) still gets the first page, unless the user has already moved.
@@ -138,7 +141,46 @@ class StandbyView(context: Context) : View(context) {
         toScreen.invert(toPage)
     }
 
+    // ------------------------------------------------------------------ idle refresh rate
+
+    /**
+     * A minute without a touch, StandBy asks for the slowest refresh the panel offers (this
+     * phone's ARR goes down to 1Hz) and redraws on that beat; a touch, or something that
+     * moves on its own - a track change, StandBy leaving - asks for the normal rate again.
+     */
+    private var activeUntil = SystemClock.uptimeMillis() + IDLE_AFTER_MS
+    private var idleApplied = false
+    /** Views that follow this one's rate - the backdrop under it. */
+    var followers: List<View> = emptyList()
+
+    private val lowRate: Float by lazy {
+        runCatching { display?.supportedRefreshRates?.filter { it >= 1f }?.minOrNull() }
+            .getOrNull() ?: 10f
+    }
+    private val lowFrameMs: Long get() = (1000f / lowRate).toLong().coerceAtLeast(16L)
+
+    /** Normal rate for at least [ms] from now (never shortens a longer one). */
+    fun wake(ms: Long = IDLE_AFTER_MS) {
+        activeUntil = maxOf(activeUntil, SystemClock.uptimeMillis() + ms)
+        if (idleApplied) applyRate(false)
+        invalidate()
+    }
+
+    private fun idleNow(): Boolean {
+        val idle = SystemClock.uptimeMillis() >= activeUntil
+        if (idle != idleApplied) applyRate(idle)
+        return idle
+    }
+
+    private fun applyRate(idle: Boolean) {
+        idleApplied = idle
+        val rate = if (idle) lowRate else View.REQUESTED_FRAME_RATE_CATEGORY_DEFAULT
+        requestedFrameRate = rate
+        followers.forEach { it.requestedFrameRate = rate }
+    }
+
     override fun onTouchEvent(raw: MotionEvent): Boolean {
+        wake()
         updateMatrix()
         val e = MotionEvent.obtain(raw).apply { transform(toPage) }
         try { return onPageTouch(e) } finally { e.recycle() }
@@ -237,7 +279,10 @@ class StandbyView(context: Context) : View(context) {
 
     fun enter() = animateShown(1f, 900L) {}
 
-    fun leave(done: () -> Unit) = animateShown(0f, 420L, done)
+    fun leave(done: () -> Unit) {
+        wake(2_000L)
+        animateShown(0f, 420L, done)
+    }
 
     private fun animateShown(to: Float, ms: Long, done: () -> Unit) {
         shownAnim?.cancel()
@@ -307,7 +352,8 @@ class StandbyView(context: Context) : View(context) {
         }
         c.restore()
         // StandBy keeps time to the second; a sweep needs every frame while it is shown.
-        if (isAttachedToWindow) postInvalidateOnAnimation()
+        if (!isAttachedToWindow) return
+        if (idleNow()) postInvalidateDelayed(lowFrameMs) else postInvalidateOnAnimation()
     }
 
     /** The page a swipe started from - the one that is leaving, or -1 at rest. */
@@ -466,6 +512,7 @@ class StandbyView(context: Context) : View(context) {
 
     companion object {
         private const val PAGES = 3
+        private const val IDLE_AFTER_MS = 60_000L
         /** How small a page gets on its way out (and in), at a whole page away. */
         private const val PAGE_SHRINK = 0.3f
         /** How far it travels meanwhile, as a share of the page height. */

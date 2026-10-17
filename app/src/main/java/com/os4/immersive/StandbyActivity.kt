@@ -36,6 +36,7 @@ class StandbyActivity : Activity() {
             alpha = 0f
         }
         view.onMatrix = { backdrop.pageMatrix = it }
+        view.followers = listOf(backdrop)
         view.onShown = { backdrop.alpha = kotlin.math.min(1f, it * 1.6f) }
         setContentView(android.widget.FrameLayout(this).apply {
             addView(backdrop)
