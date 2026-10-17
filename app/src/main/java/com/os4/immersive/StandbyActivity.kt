@@ -59,7 +59,8 @@ class StandbyActivity : Activity() {
     private val sideListener = object : android.hardware.SensorEventListener {
         override fun onSensorChanged(e: android.hardware.SensorEvent) {
             val x = e.values[0]
-            if (x > 6f) view.setSide(1, true) else if (x < -6f) view.setSide(-1, true)
+            // The same test as entering, so a deep recline turns the page too.
+            if (StandbyDetector.isLandscape(x, e.values[1], false)) view.setSide(if (x > 0) 1 else -1, true)
         }
         override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
     }

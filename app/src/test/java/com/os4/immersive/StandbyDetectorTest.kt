@@ -28,6 +28,12 @@ class StandbyDetectorTest {
         assertEquals(StandbyDetector.State.ACTIVE, d.hold(4_050, 5_800, true, x, 0f, z))
     }
 
+    @Test fun leaningFarBackStillCounts() {
+        // z is not a condition: a phone reclined 65 degrees on a low stand.
+        val d = StandbyDetector()
+        assertEquals(StandbyDetector.State.ACTIVE, d.hold(0, 5_600, true, g * 0.42f, 0f, g * 0.9f))
+    }
+
     @Test fun neverEntersWithoutCharging() {
         val d = StandbyDetector()
         assertEquals(StandbyDetector.State.IDLE, d.hold(0, 8_000, false, g, 0f, 0f))

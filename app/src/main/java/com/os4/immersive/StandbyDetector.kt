@@ -9,8 +9,9 @@ import kotlin.math.sqrt
  * Pure (no Android types), so the thresholds are testable off the phone. Fed accelerometer
  * samples in m/s² with the time they were taken; answers with the state they lead to.
  *
- * - Landscape: gravity runs mostly along the device's x axis. A phone on a stand leans back, so
- *   some z is allowed; lying flat (gravity on z) or upright (on y) is not landscape.
+ * - Landscape: judged in the screen's own plane, like iPhone - which long edge is down, not how
+ *   far the phone leans back. Any recline counts; only a phone lying (nearly) flat has no
+ *   edge down at all, which [MIN_PLANE] rules out.
  * - Still: across the last [STILL_WINDOW_MS] every axis stayed within [STILL_SPREAD]. A phone in
  *   a hand drifts more than that; one on a stand or a desk does not.
  * - Entering needs all three, unbroken, for [dwellMs]. Leaving needs the phone off charge, or
@@ -55,7 +56,7 @@ class StandbyDetector(private val dwellMs: Long = DWELL_MS) {
     fun update(nowMs: Long, charging: Boolean, x: Float, y: Float, z: Float): State {
         push(nowMs, x, y, z)
         val g = sqrt(x * x + y * y + z * z)
-        landscape = g > 1f && isLandscape(x / g, y / g, z / g, state == State.ACTIVE)
+        landscape = g > 1f && isLandscape(x, y, state == State.ACTIVE)
         still = isStill(nowMs)
 
         when (state) {
@@ -135,13 +136,18 @@ class StandbyDetector(private val dwellMs: Long = DWELL_MS) {
         const val STILL_SPREAD = 0.8f
         private const val WINDOW_CAP = 64
 
+        /** m/s² of gravity left in the screen's plane: below this the phone is lying flat. */
+        const val MIN_PLANE = 1.5f
+
         /**
-         * Unit gravity components. Entering wants x to carry at least 75% of gravity (within
-         * ~41° of on its side); staying, with [active], only 60% - so the edge is not a flicker.
+         * Gravity's x and y. Entering wants the x share of the in-plane gravity at 0.85 or more
+         * (within ~32° of on its side); staying, with [active], 0.6 - so the edge does not
+         * flicker. z - the lean - is not looked at.
          */
-        fun isLandscape(nx: Float, ny: Float, nz: Float, active: Boolean): Boolean {
-            val minX = if (active) 0.6f else 0.75f
-            return abs(nx) >= minX && abs(ny) <= 0.5f && abs(nz) <= 0.8f
+        fun isLandscape(x: Float, y: Float, active: Boolean): Boolean {
+            val plane = kotlin.math.sqrt(x * x + y * y)
+            if (plane < MIN_PLANE) return false
+            return abs(x) / plane >= if (active) 0.6f else 0.85f
         }
     }
 }
