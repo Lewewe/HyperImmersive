@@ -439,7 +439,7 @@ class StandbyView(context: Context) : View(context) {
     companion object {
         private const val PAGES = 3
         /** How small a page gets on its way out (and in), at a whole page away. */
-        private const val PAGE_SHRINK = 0.2f
+        private const val PAGE_SHRINK = 0.3f
         /** How far it travels meanwhile, as a share of the page height. */
         private const val PAGE_SLIDE = 1f
     }
