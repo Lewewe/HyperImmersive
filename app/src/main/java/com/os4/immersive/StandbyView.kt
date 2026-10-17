@@ -158,6 +158,7 @@ class StandbyView(context: Context) : View(context) {
                 held = if (onMusic) music.buttonAt(e.x, e.y) else -1
                 if (held >= 0) { music.press(held); return true }
                 userPaged = true
+                if (snap?.isRunning != true) leaving = Math.round(page)
                 snap?.cancel()
                 dragX = e.y
                 dragging = true
@@ -170,6 +171,7 @@ class StandbyView(context: Context) : View(context) {
                     music.release(held, false)
                     held = -1
                     userPaged = true
+                    leaving = Math.round(page)
                     dragX = e.y
                     dragging = true
                     velocity = VelocityTracker.obtain().apply { addMovement(e) }
@@ -212,11 +214,17 @@ class StandbyView(context: Context) : View(context) {
     }
 
     private fun snapTo(target: Float) {
+        if (leaving < 0) leaving = Math.round(page)
         snap?.cancel()
         snap = ValueAnimator.ofFloat(page, target).apply {
             duration = 460
             interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
             addUpdateListener { page = it.animatedValue as Float }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    if (snap === a) leaving = -1
+                }
+            })
             start()
         }
     }
@@ -285,7 +293,8 @@ class StandbyView(context: Context) : View(context) {
                 c.translate(0f, d * h * PAGE_SLIDE)
                 c.scale(s, s, w / 2f, h / 2f)
             }
-            val blur = PAGE_BLUR_DP * dens * far
+            // Only the page on its way out blurs; the one coming in arrives sharp.
+            val blur = if (p == leaving) PAGE_BLUR_DP * dens * far else 0f
             if (blur > 0.5f && c is android.graphics.RecordingCanvas) {
                 val node = pageNodes[p]
                 node.setPosition(0, 0, w.toInt(), h.toInt())
@@ -300,6 +309,9 @@ class StandbyView(context: Context) : View(context) {
         // StandBy keeps time to the second; a sweep needs every frame while it is shown.
         if (isAttachedToWindow) postInvalidateOnAnimation()
     }
+
+    /** The page a swipe started from - the one that is leaving, or -1 at rest. */
+    private var leaving = -1
 
     private val pageNodes = Array(PAGES) { android.graphics.RenderNode("standby-page-$it") }
 

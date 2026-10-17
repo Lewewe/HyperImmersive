@@ -294,7 +294,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         drawText(c, cur, textLeft, textW, h, enter * inT, 1f - inT)
         drawProgress(c, textLeft, textW, h, enter * (if (cur != null || out != null) 1f else 0f))
         drawControls(c, textLeft, textW, h, enter)
-        drawVisualizer(c, textLeft + textW, h, enter * (if (MediaArt.running) 1f else 0.5f))
+        drawVisualizer(c, textLeft + textW, h, enter)
     }
 
     // ------------------------------------------------------------------ progress
@@ -593,8 +593,10 @@ class MusicPage(private val context: android.content.Context, private val dens: 
             java.lang.Float.floatToIntBits(cy).toLong()
         if (visShader == null || key != visShaderKey) {
             visShaderKey = key
+            // Fully opaque here: HMC-E's colours keep HyperOS's 0x99 for its own bars, but on
+            // StandBy's blurred backdrop the bars are drawn solid.
             visShader = android.graphics.LinearGradient(0f, cy - box / 2f, 0f, cy + box / 2f,
-                Spectrum.top, Spectrum.bottom, Shader.TileMode.CLAMP)
+                Spectrum.top or OPAQUE, Spectrum.bottom or OPAQUE, Shader.TileMode.CLAMP)
         }
         visPaint.shader = visShader
         visPaint.alpha = (255 * alpha).toInt()
@@ -650,6 +652,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         const val FLIP_DAMPING = 0.72f
         /** The visualizer's width, as a share of the page height. */
         const val VIS_W = 0.085f
+        private const val OPAQUE = 0xFF000000.toInt()
         const val FLIP_RESPONSE = 0.5f
         /** How much brighter than SystemUI's shader output the bar is drawn. */
         const val BAR_GAIN = 1.45f
