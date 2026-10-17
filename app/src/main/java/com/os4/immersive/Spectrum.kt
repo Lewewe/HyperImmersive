@@ -49,6 +49,14 @@ object Spectrum {
 
     private val sink = object : Binder() {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+            if (code == FIRST_CALL_TRANSACTION + 1) {
+                // The lock screen's backdrop for this track, composed by HMC-E.
+                val key = data.readString().orEmpty()
+                val bmp = runCatching { android.graphics.Bitmap.CREATOR.createFromParcel(data) }
+                    .getOrNull()
+                if (bmp != null) main.post { HmcBackdrop.set(key, bmp) }
+                return true
+            }
             if (code != FIRST_CALL_TRANSACTION) return super.onTransact(code, data, reply, flags)
             for (i in 0 until 5) target[i] = data.readFloat().coerceIn(0f, 1f)
             if (data.dataAvail() >= 12) {

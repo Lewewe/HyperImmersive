@@ -273,6 +273,8 @@ class StandbyView(context: Context) : View(context) {
         // iPhone's StandBy stack: the page moving off slides a whole page along the swipe,
         // shrinking as it goes; the one coming in grows out of the same small size into place.
         // No fade - the two stay solid and never overlap.
+        // In transit a page is also blurred, more the further it is from rest - recorded into
+        // its own RenderNode so the blur is the page's alone.
         for (p in 0 until PAGES) {
             val d = p - page
             val far = abs(d)
@@ -283,16 +285,30 @@ class StandbyView(context: Context) : View(context) {
                 c.translate(0f, d * h * PAGE_SLIDE)
                 c.scale(s, s, w / 2f, h / 2f)
             }
-            when (p) {
-                0 -> music.draw(c, w, h, stagger(0))
-                1 -> drawWidgets(c, w, h)
-                else -> drawBigClock(c, w, h)
-            }
+            val blur = PAGE_BLUR_DP * dens * far
+            if (blur > 0.5f && c is android.graphics.RecordingCanvas) {
+                val node = pageNodes[p]
+                node.setPosition(0, 0, w.toInt(), h.toInt())
+                val rc = node.beginRecording(w.toInt(), h.toInt())
+                try { drawPage(rc, p, w, h) } finally { node.endRecording() }
+                node.setRenderEffect(RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL))
+                c.drawRenderNode(node)
+            } else drawPage(c, p, w, h)
             c.restore()
         }
         c.restore()
         // StandBy keeps time to the second; a sweep needs every frame while it is shown.
         if (isAttachedToWindow) postInvalidateOnAnimation()
+    }
+
+    private val pageNodes = Array(PAGES) { android.graphics.RenderNode("standby-page-$it") }
+
+    private fun drawPage(c: Canvas, p: Int, w: Float, h: Float) {
+        when (p) {
+            0 -> music.draw(c, w, h, stagger(0))
+            1 -> drawWidgets(c, w, h)
+            else -> drawBigClock(c, w, h)
+        }
     }
 
     private fun withEntrance(c: Canvas, order: Int, cx: Float, cy: Float, body: () -> Unit) {
@@ -442,5 +458,7 @@ class StandbyView(context: Context) : View(context) {
         private const val PAGE_SHRINK = 0.3f
         /** How far it travels meanwhile, as a share of the page height. */
         private const val PAGE_SLIDE = 1f
+        /** Blur of a page a whole page from rest, in dp. */
+        private const val PAGE_BLUR_DP = 28f
     }
 }

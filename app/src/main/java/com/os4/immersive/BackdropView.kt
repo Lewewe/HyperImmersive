@@ -40,24 +40,36 @@ class BackdropView(context: Context) : View(context) {
     private var outFrom = 0f
     private var fade: ValueAnimator? = null
 
-    init {
+    /** Showing HMC-E's composed backdrop rather than blurring the cover here. */
+    private var fromHmc = false
+
+    private val ownLook: RenderEffect by lazy {
         // One blur for the whole layer: cheap, on the GPU, and wide enough that the art reads as
         // colour rather than as a picture. CLAMP so the edges do not darken.
         val blur = RenderEffect.createBlurEffect(BLUR_DP * dens, BLUR_DP * dens, Shader.TileMode.CLAMP)
         val saturate = ColorMatrix().apply { setSaturation(1.35f) }
-        setRenderEffect(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(saturate), blur))
+        RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(saturate), blur)
+    }
+    /** HMC-E's backdrop is already the lock screen's; only smooth its upscale. */
+    private val hmcLook: RenderEffect by lazy {
+        RenderEffect.createBlurEffect(6f * dens, 6f * dens, Shader.TileMode.CLAMP)
     }
 
+    init { setRenderEffect(ownLook) }
+
     private val onArt: () -> Unit = { post { update() } }
+    private val onHmc: () -> Unit = { update() }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         MediaArt.addListener(onArt)
+        HmcBackdrop.addListener(onHmc)
         update()
     }
 
     override fun onDetachedFromWindow() {
         MediaArt.removeListener(onArt)
+        HmcBackdrop.removeListener(onHmc)
         super.onDetachedFromWindow()
     }
 
@@ -72,18 +84,27 @@ class BackdropView(context: Context) : View(context) {
      * not take the art away either, unless it lasts.
      */
     private fun update() {
-        val next = if (artEnabled && MediaArt.shown) MediaArt.art else null
+        // HMC-E's backdrop when it has sent one, the cover blurred here otherwise.
+        val hmc = HmcBackdrop.bitmap
+        val useHmc = hmc != null
+        if (useHmc != fromHmc) {
+            fromHmc = useHmc
+            setRenderEffect(if (useHmc) hmcLook else ownLook)
+            currentKey = ""
+        }
+        val next = if (artEnabled && MediaArt.shown) (if (useHmc) hmc else MediaArt.art) else null
+        val trackKey = if (useHmc) HmcBackdrop.key else MediaArt.key
         if (next == null) {
             if (current != null) postDelayed(hideLater, if (artEnabled) HIDE_DELAY_MS else 0L)
             return
         }
         removeCallbacks(hideLater)
-        if (current != null && MediaArt.key == currentKey) {
+        if (current != null && trackKey == currentKey) {
             current = next
             invalidate()
             return
         }
-        apply(next, MediaArt.key)
+        apply(next, trackKey)
     }
 
     private fun apply(next: Bitmap?, key: String) {
@@ -122,8 +143,11 @@ class BackdropView(context: Context) : View(context) {
         if (out != null) draw(c, out, outAlpha, pageW, pageH)
         if (cur != null) draw(c, cur, curAlpha, pageW, pageH)
         c.restore()
-        dim.alpha = (DIM_ALPHA * maxOf(outAlpha, curAlpha)).toInt()
-        c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dim)
+        // HMC-E's backdrop carries the lock screen's own shade.
+        if (!fromHmc) {
+            dim.alpha = (DIM_ALPHA * maxOf(outAlpha, curAlpha)).toInt()
+            c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dim)
+        }
     }
 
     /** Centre-cropped to the page, like a cover over a landscape screen. */
