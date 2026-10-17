@@ -9,6 +9,11 @@
     <!-- Lets the prototype's service open StandBy from the background. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- HyperOS's own media icons are read from SystemUI's resources. -->
+    <queries>
+        <package android:name="com.android.systemui" />
+    </queries>
+
     <application
         android:label="HyperImmersive"
         android:icon="@android:drawable/ic_lock_idle_charging"

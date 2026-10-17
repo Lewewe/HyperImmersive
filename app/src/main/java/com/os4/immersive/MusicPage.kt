@@ -25,7 +25,56 @@ import kotlin.math.max
  *   with no animation - the key, not the bitmap, says whether the song changed.
  * - No music: a placeholder square in the cover's place.
  */
-class MusicPage(private val dens: Float, private val invalidate: () -> Unit) {
+class MusicPage(private val context: android.content.Context, private val dens: Float,
+                private val invalidate: () -> Unit) {
+
+    /**
+     * HyperOS's own transport icons, read out of SystemUI: the animated vectors its media card
+     * uses (MediaActionsKt.getStandardAction / MiuiMediaActionButtonUtils) - pause shown while
+     * playing and play while paused, each morphing in when it is put up, and next/previous
+     * playing their nudge when tapped. Plain AnimatedVectorDrawables, so another app can
+     * inflate them from SystemUI's resources. Missing ones fall back to drawn shapes.
+     */
+    private val sysui = runCatching {
+        context.createPackageContext("com.android.systemui", 0)
+    }.getOrNull()
+    private val iconCallback = object : android.graphics.drawable.Drawable.Callback {
+        override fun invalidateDrawable(who: android.graphics.drawable.Drawable) = invalidate()
+        override fun scheduleDrawable(who: android.graphics.drawable.Drawable, what: Runnable, `when`: Long) {
+            main.postAtTime(what, who, `when`)
+        }
+        override fun unscheduleDrawable(who: android.graphics.drawable.Drawable, what: Runnable) {
+            main.removeCallbacks(what, who)
+        }
+    }
+
+    private fun hyperIcon(name: String): android.graphics.drawable.Drawable? = runCatching {
+        val ctx = sysui ?: return null
+        val id = ctx.resources.getIdentifier(name, "drawable", "com.android.systemui")
+        if (id == 0) null else ctx.getDrawable(id)?.mutate()?.apply {
+            setTint(Color.WHITE)
+            callback = iconCallback
+        }
+    }.getOrNull()
+
+    private val prevIcon = hyperIcon("ic_media_prev")
+    private val nextIcon = hyperIcon("ic_media_next")
+    private var playIcon: android.graphics.drawable.Drawable? = null
+    /** Which state [playIcon] was put up for; a change puts up the other and starts it. */
+    private var playIconFor: Boolean? = null
+
+    private fun start(d: android.graphics.drawable.Drawable?) {
+        (d as? android.graphics.drawable.Animatable)?.let { it.stop(); it.start() }
+    }
+
+    private fun playIconFor(running: Boolean): android.graphics.drawable.Drawable? {
+        if (playIconFor != running) {
+            playIconFor = running
+            playIcon = hyperIcon(if (running) "ic_media_pause_animation" else "ic_media_play_animation")
+            start(playIcon)
+        }
+        return playIcon
+    }
 
     private val artPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val shadow = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -169,7 +218,17 @@ class MusicPage(private val dens: Float, private val invalidate: () -> Unit) {
             val k = if (pressed == i) 0.85f else 1f
             c.save()
             c.scale(k, k, cx, y)
-            when (i) {
+            val d = when (i) {
+                0 -> prevIcon
+                1 -> playIconFor(MediaArt.running)
+                else -> nextIcon
+            }
+            if (d != null) {
+                val half = size * (if (i == 1) 0.75f else 0.6f)
+                d.setBounds((cx - half).toInt(), (y - half).toInt(), (cx + half).toInt(), (y + half).toInt())
+                d.alpha = (255 * enter).toInt()
+                d.draw(c)
+            } else when (i) {
                 0 -> { triangle(c, cx + size * 0.05f, y, size * 0.45f, -1); triangle(c, cx - size * 0.4f, y, size * 0.45f, -1) }
                 1 -> if (MediaArt.running) {
                     val bw = size * 0.22f
@@ -203,6 +262,7 @@ class MusicPage(private val dens: Float, private val invalidate: () -> Unit) {
         pressed = -1
         invalidate()
         if (!fire) return
+        if (i == 0) start(prevIcon) else if (i == 2) start(nextIcon)
         when (i) {
             0 -> MediaArt.previous()
             1 -> MediaArt.playPause()

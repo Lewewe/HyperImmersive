@@ -52,7 +52,7 @@ class StandbyView(context: Context) : View(context) {
 
     private var page = 0f
 
-    private val music = MusicPage(dens) { invalidate() }
+    private val music = MusicPage(context, dens) { invalidate() }
     /** Swiped by hand: from then on the page stays where the user put it. */
     private var userPaged = false
     private val onMedia: () -> Unit = {
