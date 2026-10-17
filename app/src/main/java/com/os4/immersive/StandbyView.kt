@@ -151,34 +151,38 @@ class StandbyView(context: Context) : View(context) {
                 downY = e.y
                 // A finger on a button of the music page, while that page is the one shown.
                 val onMusic = abs(page) < 0.05f
-                if (onMusic && music.scrubStart(e.x + page * pageW, e.y)) {
+                if (onMusic && music.scrubStart(e.x, e.y)) {
                     scrubbing = true
                     return true
                 }
-                held = if (onMusic) music.buttonAt(e.x + page * pageW, e.y) else -1
+                held = if (onMusic) music.buttonAt(e.x, e.y) else -1
                 if (held >= 0) { music.press(held); return true }
                 userPaged = true
                 snap?.cancel()
-                dragX = e.x
+                dragX = e.y
                 dragging = true
                 velocity = VelocityTracker.obtain().apply { addMovement(e) }
             }
             MotionEvent.ACTION_MOVE -> if (scrubbing) {
-                music.scrubMove(e.x + page * pageW)
+                music.scrubMove(e.x)
             } else if (held >= 0) {
                 if (abs(e.x - downX) > 12 * dens || abs(e.y - downY) > 12 * dens) {
                     music.release(held, false)
                     held = -1
                     userPaged = true
-                    dragX = e.x
+                    dragX = e.y
                     dragging = true
                     velocity = VelocityTracker.obtain().apply { addMovement(e) }
                 }
             } else if (dragging) {
                 velocity?.addMovement(e)
-                val dx = e.x - dragX
-                dragX = e.x
-                page = (page - dx / pageW).coerceIn(-0.15f, PAGES - 1 + 0.15f)
+                // Up and down, like iPhone's StandBy stacks: a swipe up brings the next page.
+                // Past either end it gives a little, harder the further it is pulled.
+                val dy = e.y - dragX
+                dragX = e.y
+                val edge = page < 0f || page > PAGES - 1f
+                page = (page - dy / (pageH * 0.75f) * (if (edge) 0.35f else 1f))
+                    .coerceIn(-0.2f, PAGES - 1 + 0.2f)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (scrubbing) {
@@ -193,7 +197,7 @@ class StandbyView(context: Context) : View(context) {
                 }
                 if (!dragging) return true
                 dragging = false
-                val v = velocity?.run { addMovement(e); computeCurrentVelocity(1000); xVelocity } ?: 0f
+                val v = velocity?.run { addMovement(e); computeCurrentVelocity(1000); yVelocity } ?: 0f
                 velocity?.recycle()
                 velocity = null
                 val target = when {
@@ -210,7 +214,7 @@ class StandbyView(context: Context) : View(context) {
     private fun snapTo(target: Float) {
         snap?.cancel()
         snap = ValueAnimator.ofFloat(page, target).apply {
-            duration = 380
+            duration = 460
             interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
             addUpdateListener { page = it.animatedValue as Float }
             start()
@@ -266,16 +270,25 @@ class StandbyView(context: Context) : View(context) {
         }
         c.save()
         c.concat(toScreen)
+        // iPhone's StandBy stack: the page moving off slides along the swipe, shrinking and
+        // fading; the one coming in grows out of the same small size into place.
         for (p in 0 until PAGES) {
-            val off = (p - page) * w
-            if (abs(off) >= w) continue
+            val d = p - page
+            val far = abs(d)
+            if (far >= 1f) continue
             c.save()
-            c.translate(off, 0f)
+            if (far > 0.001f) {
+                val s = 1f - PAGE_SHRINK * far
+                c.translate(0f, d * h * PAGE_SLIDE)
+                c.scale(s, s, w / 2f, h / 2f)
+                c.saveLayerAlpha(null, (255 * (1f - far)).toInt())
+            }
             when (p) {
                 0 -> music.draw(c, w, h, stagger(0))
                 1 -> drawWidgets(c, w, h)
                 else -> drawBigClock(c, w, h)
             }
+            if (far > 0.001f) c.restore()
             c.restore()
         }
         c.restore()
@@ -426,5 +439,9 @@ class StandbyView(context: Context) : View(context) {
 
     companion object {
         private const val PAGES = 3
+        /** How small a page gets on its way out (and in), at a whole page away. */
+        private const val PAGE_SHRINK = 0.2f
+        /** How far it travels meanwhile, as a share of the page height. */
+        private const val PAGE_SLIDE = 0.55f
     }
 }
