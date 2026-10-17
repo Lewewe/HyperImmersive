@@ -290,7 +290,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         val textW = w - textLeft - h * 0.08f
         drawText(c, out, textLeft, textW, h, enter * (1f - (swap / 0.5f).coerceIn(0f, 1f)), -1f)
         drawText(c, cur, textLeft, textW, h, enter * inT, 1f - inT)
-        drawProgress(c, textLeft, textW, h, enter * (if (cur != null) inT else 0f))
+        drawProgress(c, textLeft, textW, h, enter * (if (cur != null || out != null) 1f else 0f))
         drawControls(c, textLeft, textW, h, enter)
     }
 
@@ -349,8 +349,17 @@ class MusicPage(private val context: android.content.Context, private val dens: 
      * The bar is a 6dp capsule on a #1affffff track, its fill fading up towards a bright,
      * softly glowing head. Kept from before: the bar grows while a finger scrubs it.
      */
+    /** The last known length, held across the moment a new track reports none yet. */
+    private var lastDuration = 0L
+    private var lastDurationAt = 0L
+
     private fun drawProgress(c: Canvas, left: Float, width: Float, h: Float, alpha: Float) {
-        val d = MediaArt.duration
+        // The bar stays up through a track change: it does not fade with the title, and a new
+        // track that has not reported its length yet keeps the old one for a moment.
+        val now0 = android.os.SystemClock.uptimeMillis()
+        var d = MediaArt.duration
+        if (d > 0L) { lastDuration = d; lastDurationAt = now0 }
+        else if (now0 - lastDurationAt < 2000L) d = lastDuration
         if (alpha <= 0f || d <= 0L || width <= 0f) { bar.setEmpty(); return }
         val y = h * 0.56f + columnShift(h)
         val barLeft = left
