@@ -381,19 +381,18 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     }
 
     /**
-     * Spread across the progress bar's width: previous flush with its left end, next with its
-     * right end, play/pause in the middle - so the row mirrors the bar above it.
+     * Centred under the progress bar, play/pause in the middle and previous/next an equal
+     * [SKIP_SPREAD] of the bar's width to either side - the row mirrors the bar above it.
      */
     private fun drawControls(c: Canvas, left: Float, width: Float, h: Float, enter: Float) {
         val size = h * 0.11f
         val y = h * 0.78f
-        val edge = size * 0.6f
         icon.alpha = (255 * enter).toInt()
         for (i in 0..2) {
             val cx = when (i) {
-                0 -> left + edge
+                0 -> left + width * (0.5f - SKIP_SPREAD)
                 1 -> left + width / 2f
-                else -> left + width - edge
+                else -> left + width * (0.5f + SKIP_SPREAD)
             }
             buttons[i].set(cx - size, y - size, cx + size, y + size)
             val k = if (pressed == i) 0.85f else 1f
@@ -503,5 +502,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         const val BAR_GAIN = 1.45f
         /** The head's glow against SystemUI's, after [BAR_GAIN]. */
         const val GLOW = 0.5f
+        /** Previous/next from the middle, as a share of the bar's width. */
+        const val SKIP_SPREAD = 0.36f
     }
 }
