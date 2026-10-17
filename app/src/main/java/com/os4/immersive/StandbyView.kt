@@ -270,8 +270,9 @@ class StandbyView(context: Context) : View(context) {
         }
         c.save()
         c.concat(toScreen)
-        // iPhone's StandBy stack: the page moving off slides along the swipe, shrinking and
-        // fading; the one coming in grows out of the same small size into place.
+        // iPhone's StandBy stack: the page moving off slides a whole page along the swipe,
+        // shrinking as it goes; the one coming in grows out of the same small size into place.
+        // No fade - the two stay solid and never overlap.
         for (p in 0 until PAGES) {
             val d = p - page
             val far = abs(d)
@@ -281,14 +282,12 @@ class StandbyView(context: Context) : View(context) {
                 val s = 1f - PAGE_SHRINK * far
                 c.translate(0f, d * h * PAGE_SLIDE)
                 c.scale(s, s, w / 2f, h / 2f)
-                c.saveLayerAlpha(null, (255 * (1f - far)).toInt())
             }
             when (p) {
                 0 -> music.draw(c, w, h, stagger(0))
                 1 -> drawWidgets(c, w, h)
                 else -> drawBigClock(c, w, h)
             }
-            if (far > 0.001f) c.restore()
             c.restore()
         }
         c.restore()
@@ -442,6 +441,6 @@ class StandbyView(context: Context) : View(context) {
         /** How small a page gets on its way out (and in), at a whole page away. */
         private const val PAGE_SHRINK = 0.2f
         /** How far it travels meanwhile, as a share of the page height. */
-        private const val PAGE_SLIDE = 0.55f
+        private const val PAGE_SLIDE = 1f
     }
 }
