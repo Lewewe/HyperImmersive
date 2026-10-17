@@ -175,7 +175,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     fun draw(c: Canvas, w: Float, h: Float, enter: Float) {
         if (enter <= 0f) return
         val side = h * 0.70f
-        val cx = w * 0.30f
+        // The same gap to the left edge as above and below the cover.
+        val cx = (h - side) / 2f + side / 2f
         val cy = h / 2f
         val radius = side * 0.08f
         val base = (1.14f - 0.14f * enter) * playScale
