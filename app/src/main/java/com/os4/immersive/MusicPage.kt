@@ -631,13 +631,15 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     }
 
     /**
-     * Moves the text-and-controls column so it is centred on the cover: from the title's cap
-     * height (its baseline at 0.38h, 0.075h type) to the bottom of the play button (centred at
-     * 0.78h, half a 0.11h * 1.5 icon), its middle is put on the cover's, h / 2.
+     * Moves the text-and-controls column so its visible ink is centred on the cover: from the
+     * top of the title's tallest glyphs (0.84 of its size above the baseline at 0.38h - CJK
+     * reaches that, Latin caps a little less) to the bottom of the play/pause glyph (0.4 of the
+     * 0.11h button size below its centre at 0.78h - the HyperOS icon's drawn part, not its
+     * padded bounds), measured on the device. Its middle goes on the cover's, h / 2.
      */
     private fun columnShift(h: Float): Float {
-        val top = h * 0.38f - h * 0.075f * 0.75f
-        val bottom = h * 0.78f + h * 0.11f * 0.75f
+        val top = h * 0.38f - h * 0.075f * 0.84f
+        val bottom = h * 0.78f + h * 0.11f * 0.4f
         return h / 2f - (top + bottom) / 2f
     }
 
