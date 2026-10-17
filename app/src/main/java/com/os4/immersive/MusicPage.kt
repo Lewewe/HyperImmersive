@@ -288,7 +288,9 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         // Title and artist beside the cover; they follow the cover's swap, sliding up a little.
         val textLeft = cx + side / 2f + h * 0.08f
         val textW = w - textLeft - h * 0.08f
-        drawText(c, out, textLeft, textW, h, enter * (1f - (swap / 0.5f).coerceIn(0f, 1f)), -1f)
+        // The old title slides up as it fades, from where it stood - not from one step above it.
+        val outT = (swap / 0.5f).coerceIn(0f, 1f)
+        drawText(c, out, textLeft, textW, h, enter * (1f - outT), -outT)
         drawText(c, cur, textLeft, textW, h, enter * inT, 1f - inT)
         drawProgress(c, textLeft, textW, h, enter * (if (cur != null || out != null) 1f else 0f))
         drawControls(c, textLeft, textW, h, enter)
