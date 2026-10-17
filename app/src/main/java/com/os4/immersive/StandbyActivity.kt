@@ -73,6 +73,16 @@ class StandbyActivity : Activity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        Spectrum.start(this)
+    }
+
+    override fun onStop() {
+        Spectrum.stop()
+        super.onStop()
+    }
+
     override fun onPause() {
         getSystemService(android.hardware.SensorManager::class.java).unregisterListener(sideListener)
         super.onPause()

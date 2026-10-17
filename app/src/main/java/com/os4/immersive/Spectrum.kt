@@ -1,0 +1,101 @@
+package com.os4.immersive
+
+import android.content.Context
+import android.content.Intent
+import android.os.Binder
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.Parcel
+import android.os.SystemClock
+import kotlin.math.max
+
+/**
+ * Five audio-reactive levels for StandBy's music page, from HyperMusicCover-Enhanced.
+ *
+ * HMC-E already captures playback before volume in SystemUI and turns it into the five bars
+ * its island and players show. Asked over its probe channel (`op extspectrum`), it pushes
+ * each frame to [sink] as a oneway call: code 1, five floats. The request is repeated every
+ * [REPEAT_MS] while StandBy wants levels - HMC-E drops a listener that stops repeating.
+ *
+ * Nothing here captures audio; without HMC-E (or with a build that has no such op) the bars
+ * simply stay down, and [available] stays false so the title keeps its full width.
+ */
+object Spectrum {
+    private const val ACTION = "com.os4.musiccover.PROBE"
+    private const val REPEAT_MS = 1_000L
+    /** No frame for this long: not available (HMC-E absent, or nothing playing). */
+    private const val STALE_MS = 1_500L
+    private const val RISE = 0.6f
+    private const val FALL_PER_S = 3.2f
+
+    val levels = FloatArray(5)
+    private val target = FloatArray(5)
+    @Volatile private var lastFrameAt = 0L
+    private var lastStep = 0L
+    private var context: Context? = null
+    private val main = Handler(Looper.getMainLooper())
+
+    val available get() = SystemClock.uptimeMillis() - lastFrameAt < STALE_MS
+
+    /** HMC-E has answered since StandBy opened: the bars have a place, even while paused. */
+    @Volatile var connected = false
+        private set
+
+    private val sink = object : Binder() {
+        override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+            if (code != FIRST_CALL_TRANSACTION) return super.onTransact(code, data, reply, flags)
+            for (i in 0 until 5) target[i] = data.readFloat().coerceIn(0f, 1f)
+            lastFrameAt = SystemClock.uptimeMillis()
+            connected = true
+            return true
+        }
+    }
+
+    private val repeat = object : Runnable {
+        override fun run() {
+            send("start")
+            main.postDelayed(this, REPEAT_MS)
+        }
+    }
+
+    fun start(c: Context) {
+        context = c.applicationContext
+        main.removeCallbacks(repeat)
+        repeat.run()
+    }
+
+    fun stop() {
+        main.removeCallbacks(repeat)
+        send("stop")
+        context = null
+        lastFrameAt = 0L
+        connected = false
+        levels.fill(0f)
+        target.fill(0f)
+    }
+
+    private fun send(what: String) {
+        val c = context ?: return
+        runCatching {
+            // HMC-E answers only senders it can identify: share ours with the broadcast.
+            c.sendBroadcast(Intent(ACTION).setPackage("com.android.systemui")
+                .putExtra("op", "extspectrum").putExtra("do", what)
+                .putExtras(Bundle().apply { putBinder("sink", sink) }), null,
+                android.app.BroadcastOptions.makeBasic().setShareIdentityEnabled(true).toBundle())
+        }
+    }
+
+    /** Moves the shown levels toward the latest frame; call once per drawn frame. */
+    fun step() {
+        val now = SystemClock.uptimeMillis()
+        val dt = if (lastStep == 0L) 0f else ((now - lastStep) / 1000f).coerceAtMost(0.1f)
+        lastStep = now
+        val live = available
+        for (b in 0 until 5) {
+            val t = if (live) target[b] else 0f
+            levels[b] = if (t > levels[b]) levels[b] + (t - levels[b]) * RISE
+            else max(t, levels[b] - FALL_PER_S * dt)
+        }
+    }
+}

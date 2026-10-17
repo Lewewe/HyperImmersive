@@ -294,6 +294,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         drawText(c, cur, textLeft, textW, h, enter * inT, 1f - inT)
         drawProgress(c, textLeft, textW, h, enter * (if (cur != null || out != null) 1f else 0f))
         drawControls(c, textLeft, textW, h, enter)
+        drawVisualizer(c, textLeft + textW, h, enter * (if (MediaArt.running) 1f else 0.5f))
     }
 
     // ------------------------------------------------------------------ progress
@@ -556,13 +557,37 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         artistPaint.textSize = h * 0.055f
         titlePaint.alpha = (255 * alpha).toInt()
         artistPaint.alpha = (170 * alpha).toInt()
-        val t = TextUtils.ellipsize(title, titlePaint, width, TextUtils.TruncateAt.END).toString()
+        // The title gives up the visualizer's corner on its right.
+        val titleW = if (Spectrum.connected) width - h * (VIS_W + 0.03f) else width
+        val t = TextUtils.ellipsize(title, titlePaint, titleW, TextUtils.TruncateAt.END).toString()
         val base = h * 0.38f + columnShift(h)
         c.drawText(t, left, base + dy, titlePaint)
         val artist = cover?.artist.orEmpty()
         if (artist.isNotEmpty()) {
             val a = TextUtils.ellipsize(artist, artistPaint, width, TextUtils.TruncateAt.END).toString()
             c.drawText(a, left, base + dy + artistPaint.textSize * 1.4f, artistPaint)
+        }
+    }
+
+    private val visPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+
+    /**
+     * Five audio-reactive bars at the right end of the title line, where HyperOS's card keeps
+     * its output-device slot. Each bar stands on the title's middle, grows both ways, and
+     * never shrinks below a dot.
+     */
+    private fun drawVisualizer(c: Canvas, right: Float, h: Float, alpha: Float) {
+        if (!Spectrum.connected || alpha <= 0f) return
+        Spectrum.step()
+        val bw = h * 0.013f
+        val gap = (h * VIS_W - 5 * bw) / 4f
+        val maxH = h * 0.065f
+        val cy = h * 0.38f + columnShift(h) - h * 0.075f * 0.36f
+        visPaint.alpha = (235 * alpha).toInt()
+        for (i in 0 until 5) {
+            val x = right - h * VIS_W + i * (bw + gap)
+            val bh = bw + (maxH - bw) * Spectrum.levels[i]
+            c.drawRoundRect(x, cy - bh / 2f, x + bw, cy + bh / 2f, bw / 2f, bw / 2f, visPaint)
         }
     }
 
@@ -606,6 +631,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         const val SWAP_FROM = 0.9f
         const val SWAP_TO = 0.86f
         const val FLIP_DAMPING = 0.72f
+        /** The visualizer's width, as a share of the page height. */
+        const val VIS_W = 0.1f
         const val FLIP_RESPONSE = 0.5f
         /** How much brighter than SystemUI's shader output the bar is drawn. */
         const val BAR_GAIN = 1.45f
