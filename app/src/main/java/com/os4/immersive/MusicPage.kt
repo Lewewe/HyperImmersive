@@ -204,12 +204,105 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         val textW = w - textLeft - h * 0.08f
         drawText(c, out, textLeft, textW, h, enter * (1f - (swap / 0.5f).coerceIn(0f, 1f)), -1f)
         drawText(c, cur, textLeft, textW, h, enter * inT, 1f - inT)
+        drawProgress(c, textLeft, minOf(textW, h * 0.9f), h, enter * (if (cur != null) inT else 0f))
         drawControls(c, textLeft, h, enter)
+    }
+
+    // ------------------------------------------------------------------ progress
+
+    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; style = Paint.Style.STROKE }
+    private val timePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = Typeface.create(Typeface.DEFAULT, 500, false)
+        isFakeBoldText = false
+    }
+    private val bar = RectF()
+    /** 0..1 how thick the bar is drawn: 1 while a finger is on it, like HyperOS's seek bar. */
+    private var grip = 0f
+    private var gripAnim: ValueAnimator? = null
+    /** The fraction a finger is holding, or NaN. */
+    private var scrub = Float.NaN
+    /** After a seek, the fraction to show until the player reports the new position. */
+    private var seekHold = Float.NaN
+    private var seekHoldUntil = 0L
+
+    private fun drawProgress(c: Canvas, left: Float, width: Float, h: Float, alpha: Float) {
+        val d = MediaArt.duration
+        if (alpha <= 0f || d <= 0L || width <= 0f) { bar.setEmpty(); return }
+        val y = h * 0.56f
+        bar.set(left, y - h * 0.04f, left + width, y + h * 0.04f)
+        val now = android.os.SystemClock.uptimeMillis()
+        val live = MediaArt.positionNow().toFloat() / d
+        if (!seekHold.isNaN() && (now > seekHoldUntil || kotlin.math.abs(live - seekHold) < 0.01f)) {
+            seekHold = Float.NaN
+        }
+        val f = (if (!scrub.isNaN()) scrub else if (!seekHold.isNaN()) seekHold else live)
+            .coerceIn(0f, 1f)
+        val thick = dens * (5f + 5f * grip)
+        track.strokeWidth = thick
+        track.color = Color.argb((70 * alpha).toInt(), 255, 255, 255)
+        c.drawLine(left + thick / 2, y, left + width - thick / 2, y, track)
+        track.color = Color.argb((235 * alpha).toInt(), 255, 255, 255)
+        val end = left + thick / 2 + (width - thick) * f
+        if (f > 0f) c.drawLine(left + thick / 2, y, end, y, track)
+
+        timePaint.textSize = h * 0.04f
+        timePaint.color = Color.argb(((150 + 80 * grip) * alpha).toInt(), 255, 255, 255)
+        val pos = (f * d).toLong()
+        val ty = y + thick / 2 + h * 0.055f
+        timePaint.textAlign = Paint.Align.LEFT
+        c.drawText(clock(pos), left, ty, timePaint)
+        timePaint.textAlign = Paint.Align.RIGHT
+        c.drawText("-" + clock(d - pos), left + width, ty, timePaint)
+        timePaint.textAlign = Paint.Align.LEFT
+    }
+
+    private fun clock(ms: Long): String {
+        val t = (ms / 1000).coerceAtLeast(0)
+        return if (t >= 3600) "%d:%02d:%02d".format(t / 3600, t / 60 % 60, t % 60)
+        else "%d:%02d".format(t / 60, t % 60)
+    }
+
+    private fun setGrip(on: Boolean) {
+        gripAnim?.cancel()
+        gripAnim = ValueAnimator.ofFloat(grip, if (on) 1f else 0f).apply {
+            duration = 220
+            interpolator = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)
+            addUpdateListener { grip = it.animatedValue as Float; invalidate() }
+            start()
+        }
+    }
+
+    /** A finger down on the bar (with some slack around it) starts a scrub. */
+    fun scrubStart(x: Float, y: Float): Boolean {
+        if (bar.isEmpty) return false
+        val slackY = bar.height()
+        if (y < bar.top - slackY || y > bar.bottom + slackY ||
+            x < bar.left - slackY || x > bar.right + slackY) return false
+        setGrip(true)
+        scrubMove(x)
+        return true
+    }
+
+    fun scrubMove(x: Float) {
+        scrub = ((x - bar.left) / bar.width()).coerceIn(0f, 1f)
+        invalidate()
+    }
+
+    fun scrubEnd(commit: Boolean) {
+        val f = scrub
+        scrub = Float.NaN
+        setGrip(false)
+        if (!commit || f.isNaN()) return
+        val d = MediaArt.duration
+        if (d <= 0L) return
+        seekHold = f
+        seekHoldUntil = android.os.SystemClock.uptimeMillis() + 1500
+        MediaArt.seekTo((f * d).toLong())
     }
 
     private fun drawControls(c: Canvas, left: Float, h: Float, enter: Float) {
         val size = h * 0.11f
-        val y = h * 0.74f
+        val y = h * 0.78f
         val gap = size * 1.3f
         icon.alpha = (255 * enter).toInt()
         for (i in 0..2) {
@@ -281,11 +374,12 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         titlePaint.alpha = (255 * alpha).toInt()
         artistPaint.alpha = (170 * alpha).toInt()
         val t = TextUtils.ellipsize(title, titlePaint, width, TextUtils.TruncateAt.END).toString()
-        c.drawText(t, left, h / 2f + dy, titlePaint)
+        val base = h * 0.38f
+        c.drawText(t, left, base + dy, titlePaint)
         val artist = cover?.artist.orEmpty()
         if (artist.isNotEmpty()) {
             val a = TextUtils.ellipsize(artist, artistPaint, width, TextUtils.TruncateAt.END).toString()
-            c.drawText(a, left, h / 2f + dy + artistPaint.textSize * 1.4f, artistPaint)
+            c.drawText(a, left, base + dy + artistPaint.textSize * 1.4f, artistPaint)
         }
     }
 

@@ -54,6 +54,27 @@ object MediaArt {
         if (running) t.pause() else t.play()
     }
     fun next() { controller?.transportControls?.skipToNext() }
+    fun seekTo(ms: Long) { controller?.transportControls?.seekTo(ms) }
+
+    /** Track length in ms, or 0 when the player does not say. */
+    @Volatile var duration = 0L
+        private set
+    @Volatile private var playback: PlaybackState? = null
+
+    /**
+     * Where the track is now. A player reports its position only when something changes, with
+     * the time it was true and the speed it moves at; the rest is extrapolated from those.
+     */
+    fun positionNow(): Long {
+        val s = playback ?: return 0L
+        var p = s.position
+        if (s.state == PlaybackState.STATE_PLAYING && s.lastPositionUpdateTime > 0) {
+            p += ((android.os.SystemClock.elapsedRealtime() - s.lastPositionUpdateTime) *
+                s.playbackSpeed).toLong()
+        }
+        val d = duration
+        return if (d > 0) p.coerceIn(0L, d) else p.coerceAtLeast(0L)
+    }
     fun previous() { controller?.transportControls?.skipToPrevious() }
     fun removeListener(l: () -> Unit) { listeners -= l }
 
@@ -104,6 +125,8 @@ object MediaArt {
         val active = state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_PAUSED ||
             state == PlaybackState.STATE_BUFFERING
         val md = c?.metadata
+        playback = c?.playbackState
+        duration = md?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.coerceAtLeast(0L) ?: 0L
         val fromSession = md?.getBitmap(MediaMetadata.METADATA_KEY_ART)
             ?: md?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
         val fromNotification = notificationArt.takeIf { notificationPkg == c?.packageName }

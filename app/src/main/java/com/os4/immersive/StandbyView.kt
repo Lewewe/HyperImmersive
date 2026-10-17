@@ -81,6 +81,7 @@ class StandbyView(context: Context) : View(context) {
     private var downX = 0f
     private var downY = 0f
     private var held = -1
+    private var scrubbing = false
     private var velocity: VelocityTracker? = null
     private var snap: ValueAnimator? = null
 
@@ -149,7 +150,12 @@ class StandbyView(context: Context) : View(context) {
                 downX = e.x
                 downY = e.y
                 // A finger on a button of the music page, while that page is the one shown.
-                held = if (abs(page) < 0.05f) music.buttonAt(e.x + page * pageW, e.y) else -1
+                val onMusic = abs(page) < 0.05f
+                if (onMusic && music.scrubStart(e.x + page * pageW, e.y)) {
+                    scrubbing = true
+                    return true
+                }
+                held = if (onMusic) music.buttonAt(e.x + page * pageW, e.y) else -1
                 if (held >= 0) { music.press(held); return true }
                 userPaged = true
                 snap?.cancel()
@@ -157,7 +163,9 @@ class StandbyView(context: Context) : View(context) {
                 dragging = true
                 velocity = VelocityTracker.obtain().apply { addMovement(e) }
             }
-            MotionEvent.ACTION_MOVE -> if (held >= 0) {
+            MotionEvent.ACTION_MOVE -> if (scrubbing) {
+                music.scrubMove(e.x + page * pageW)
+            } else if (held >= 0) {
                 if (abs(e.x - downX) > 12 * dens || abs(e.y - downY) > 12 * dens) {
                     music.release(held, false)
                     held = -1
@@ -173,6 +181,11 @@ class StandbyView(context: Context) : View(context) {
                 page = (page - dx / pageW).coerceIn(-0.15f, PAGES - 1 + 0.15f)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (scrubbing) {
+                    scrubbing = false
+                    music.scrubEnd(e.actionMasked == MotionEvent.ACTION_UP)
+                    return true
+                }
                 if (held >= 0) {
                     music.release(held, e.actionMasked == MotionEvent.ACTION_UP)
                     held = -1
