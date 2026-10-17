@@ -8,7 +8,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Parcel
 import android.os.SystemClock
-import kotlin.math.max
 
 /**
  * Five audio-reactive levels for StandBy's music page, from HyperMusicCover-Enhanced.
@@ -26,8 +25,6 @@ object Spectrum {
     private const val REPEAT_MS = 1_000L
     /** No frame for this long: not available (HMC-E absent, or nothing playing). */
     private const val STALE_MS = 1_500L
-    private const val RISE = 0.6f
-    private const val FALL_PER_S = 3.2f
 
     val levels = FloatArray(5)
     private val target = FloatArray(5)
@@ -38,6 +35,14 @@ object Spectrum {
 
     val available get() = SystemClock.uptimeMillis() - lastFrameAt < STALE_MS
 
+    /** Bar colours top/bottom as HMC-E's Bar color setting draws them. */
+    @Volatile var top = 0xFFFFFFFF.toInt()
+        private set
+    @Volatile var bottom = 0xFFFFFFFF.toInt()
+        private set
+    /** HMC-E's Audio visualization switch. */
+    @Volatile private var enabled = true
+
     /** HMC-E has answered since StandBy opened: the bars have a place, even while paused. */
     @Volatile var connected = false
         private set
@@ -46,8 +51,13 @@ object Spectrum {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             if (code != FIRST_CALL_TRANSACTION) return super.onTransact(code, data, reply, flags)
             for (i in 0 until 5) target[i] = data.readFloat().coerceIn(0f, 1f)
+            if (data.dataAvail() >= 12) {
+                top = data.readInt()
+                bottom = data.readInt()
+                enabled = data.readInt() and 1 != 0
+            }
             lastFrameAt = SystemClock.uptimeMillis()
-            connected = true
+            connected = enabled
             return true
         }
     }
@@ -86,16 +96,22 @@ object Spectrum {
         }
     }
 
-    /** Moves the shown levels toward the latest frame; call once per drawn frame. */
+    /**
+     * Moves the shown levels toward the latest frame; call once per drawn frame. HMC-E's own
+     * smoothing (AudioWaveDrawable.step): 0.6 of the way up and 0.28 down per 30fps frame,
+     * scaled to the time actually passed.
+     */
     fun step() {
         val now = SystemClock.uptimeMillis()
         val dt = if (lastStep == 0L) 0f else ((now - lastStep) / 1000f).coerceAtMost(0.1f)
         lastStep = now
+        val frames = dt * 30f
+        val attack = 1f - Math.pow(0.4, frames.toDouble()).toFloat()
+        val release = 1f - Math.pow(0.72, frames.toDouble()).toFloat()
         val live = available
         for (b in 0 until 5) {
             val t = if (live) target[b] else 0f
-            levels[b] = if (t > levels[b]) levels[b] + (t - levels[b]) * RISE
-            else max(t, levels[b] - FALL_PER_S * dt)
+            levels[b] += (t - levels[b]) * if (t > levels[b]) attack else release
         }
     }
 }
