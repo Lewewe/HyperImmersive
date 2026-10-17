@@ -28,6 +28,16 @@ object MediaArt {
         private set
     @Volatile var playing = false
         private set
+    /** Strictly playing, as opposed to paused with a track loaded. */
+    @Volatile var running = false
+        private set
+    @Volatile var title = ""
+        private set
+    @Volatile var artist = ""
+        private set
+    /** Identifies the track: a new key is a new song, the same key a refreshed picture of it. */
+    @Volatile var key = ""
+        private set
 
     private val listeners = mutableSetOf<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
@@ -38,6 +48,13 @@ object MediaArt {
     private var notificationPkg: String? = null
 
     fun addListener(l: () -> Unit) { listeners += l }
+
+    fun playPause() {
+        val t = controller?.transportControls ?: return
+        if (running) t.pause() else t.play()
+    }
+    fun next() { controller?.transportControls?.skipToNext() }
+    fun previous() { controller?.transportControls?.skipToPrevious() }
     fun removeListener(l: () -> Unit) { listeners -= l }
 
     /** Something is playing (or paused mid-track) and there is a picture of it. */
@@ -90,7 +107,11 @@ object MediaArt {
         val fromSession = md?.getBitmap(MediaMetadata.METADATA_KEY_ART)
             ?: md?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
         val fromNotification = notificationArt.takeIf { notificationPkg == c?.packageName }
-        set(fromSession ?: fromNotification, active)
+        val t = md?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
+        val a = (md?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+            ?: md?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)).orEmpty()
+        set(fromSession ?: fromNotification, active, state == PlaybackState.STATE_PLAYING,
+            t, a, "${c?.packageName}|$t|$a")
     }
 
     internal fun onMediaNotification(pkg: String, icon: Bitmap?) {
@@ -99,10 +120,15 @@ object MediaArt {
         refresh()
     }
 
-    private fun set(bitmap: Bitmap?, active: Boolean) {
-        if (bitmap === art && active == playing) return
+    private fun set(bitmap: Bitmap?, active: Boolean, run: Boolean = false, t: String = "",
+                    a: String = "", k: String = "") {
+        if (bitmap === art && active == playing && run == running && k == key) return
         art = bitmap
         playing = active
+        running = run
+        title = t
+        artist = a
+        key = k
         listeners.toList().forEach { it() }
     }
 }

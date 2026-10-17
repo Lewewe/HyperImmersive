@@ -61,9 +61,34 @@ class BackdropView(context: Context) : View(context) {
         super.onDetachedFromWindow()
     }
 
+    private var currentKey = ""
+    private val hideLater = Runnable { apply(null, "") }
+
+    /**
+     * Pausing or resuming re-posts the media notification, and with it a freshly decoded copy of
+     * the same picture - a new bitmap for the same song, which crossfaded with itself and dipped
+     * (the flicker). The track key decides: same song, the picture is swapped in place. A
+     * moment with no session state in between (players pass through one on play/pause) does
+     * not take the art away either, unless it lasts.
+     */
     private fun update() {
         val next = if (artEnabled && MediaArt.shown) MediaArt.art else null
+        if (next == null) {
+            if (current != null) postDelayed(hideLater, if (artEnabled) HIDE_DELAY_MS else 0L)
+            return
+        }
+        removeCallbacks(hideLater)
+        if (current != null && MediaArt.key == currentKey) {
+            current = next
+            invalidate()
+            return
+        }
+        apply(next, MediaArt.key)
+    }
+
+    private fun apply(next: Bitmap?, key: String) {
         if (next === current) return
+        currentKey = key
         outgoing = current
         outFrom = mix
         current = next
@@ -72,6 +97,11 @@ class BackdropView(context: Context) : View(context) {
         fade = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 450
             addUpdateListener { mix = it.animatedValue as Float; invalidate() }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    if (fade === a) { outgoing = null; invalidate() }
+                }
+            })
             start()
         }
     }
@@ -82,7 +112,9 @@ class BackdropView(context: Context) : View(context) {
         val pageH = width.toFloat()
         val out = outgoing
         val cur = current
-        val outAlpha = if (out != null) outFrom * (1f - mix) else 0f
+        // A new picture comes in over the old one, which stays whole until it is covered - so
+        // the two never add up to less than one. Only a fade to black takes it down.
+        val outAlpha = if (out == null) 0f else if (cur != null) outFrom else outFrom * (1f - mix)
         val curAlpha = if (cur != null) mix else 0f
         if (outAlpha <= 0f && curAlpha <= 0f) return
         c.save()
@@ -108,5 +140,6 @@ class BackdropView(context: Context) : View(context) {
     companion object {
         private const val BLUR_DP = 60f
         private const val DIM_ALPHA = 90
+        private const val HIDE_DELAY_MS = 1500L
     }
 }

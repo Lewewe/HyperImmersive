@@ -51,8 +51,36 @@ class StandbyView(context: Context) : View(context) {
     // ------------------------------------------------------------------ paging
 
     private var page = 0f
+
+    private val music = MusicPage(dens) { invalidate() }
+    /** Swiped by hand: from then on the page stays where the user put it. */
+    private var userPaged = false
+    private val onMedia: () -> Unit = {
+        post {
+            music.sync()
+            // Music that turns up after StandBy opened (the session is read a moment late after
+            // a restart) still gets the first page, unless the user has already moved.
+            if (!userPaged && MediaArt.shown && page != 0f) snapTo(0f)
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        MediaArt.addListener(onMedia)
+        music.snap()
+        // The music page first when there is music, as iPhone opens on Now Playing.
+        page = if (MediaArt.shown) 0f else 1f
+    }
+
+    override fun onDetachedFromWindow() {
+        MediaArt.removeListener(onMedia)
+        super.onDetachedFromWindow()
+    }
     private var dragX = 0f
     private var dragging = false
+    private var downX = 0f
+    private var downY = 0f
+    private var held = -1
     private var velocity: VelocityTracker? = null
     private var snap: ValueAnimator? = null
 
@@ -118,18 +146,39 @@ class StandbyView(context: Context) : View(context) {
     private fun onPageTouch(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                downX = e.x
+                downY = e.y
+                // A finger on a button of the music page, while that page is the one shown.
+                held = if (abs(page) < 0.05f) music.buttonAt(e.x + page * pageW, e.y) else -1
+                if (held >= 0) { music.press(held); return true }
+                userPaged = true
                 snap?.cancel()
                 dragX = e.x
                 dragging = true
                 velocity = VelocityTracker.obtain().apply { addMovement(e) }
             }
-            MotionEvent.ACTION_MOVE -> if (dragging) {
+            MotionEvent.ACTION_MOVE -> if (held >= 0) {
+                if (abs(e.x - downX) > 12 * dens || abs(e.y - downY) > 12 * dens) {
+                    music.release(held, false)
+                    held = -1
+                    userPaged = true
+                    dragX = e.x
+                    dragging = true
+                    velocity = VelocityTracker.obtain().apply { addMovement(e) }
+                }
+            } else if (dragging) {
                 velocity?.addMovement(e)
                 val dx = e.x - dragX
                 dragX = e.x
                 page = (page - dx / pageW).coerceIn(-0.15f, PAGES - 1 + 0.15f)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (held >= 0) {
+                    music.release(held, e.actionMasked == MotionEvent.ACTION_UP)
+                    held = -1
+                    return true
+                }
+                if (!dragging) return true
                 dragging = false
                 val v = velocity?.run { addMovement(e); computeCurrentVelocity(1000); xVelocity } ?: 0f
                 velocity?.recycle()
@@ -210,7 +259,8 @@ class StandbyView(context: Context) : View(context) {
             c.save()
             c.translate(off, 0f)
             when (p) {
-                0 -> drawWidgets(c, w, h)
+                0 -> music.draw(c, w, h, stagger(0))
+                1 -> drawWidgets(c, w, h)
                 else -> drawBigClock(c, w, h)
             }
             c.restore()
@@ -362,6 +412,6 @@ class StandbyView(context: Context) : View(context) {
     }
 
     companion object {
-        private const val PAGES = 2
+        private const val PAGES = 3
     }
 }

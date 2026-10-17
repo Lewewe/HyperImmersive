@@ -67,6 +67,11 @@ class StandbyService : Service(), SensorEventListener {
         startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         registerReceiver(battery, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         running = true
+        // Ask for the artwork listener to be bound again: after an update it can stay unbound.
+        runCatching {
+            android.service.notification.NotificationListenerService.requestRebind(
+                android.content.ComponentName(this, MediaListener::class.java))
+        }
         trace("watching")
     }
 
