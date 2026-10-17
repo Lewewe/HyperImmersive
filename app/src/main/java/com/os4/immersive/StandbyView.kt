@@ -68,6 +68,11 @@ class StandbyView(context: Context) : View(context) {
     private var turnAnim: ValueAnimator? = null
     private val toScreen = android.graphics.Matrix()
     private val toPage = android.graphics.Matrix()
+    private val lastSent = android.graphics.Matrix().apply { setScale(0f, 0f) }
+    /** The page's turn, for the backdrop under it. */
+    var onMatrix: ((android.graphics.Matrix) -> Unit)? = null
+    /** The entrance's progress, for the backdrop's fade. */
+    var onShown: ((Float) -> Unit)? = null
 
     fun setSide(s: Int, animate: Boolean) {
         if (s == side && turnAnim == null) return
@@ -167,6 +172,7 @@ class StandbyView(context: Context) : View(context) {
             interpolator = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)
             addUpdateListener {
                 shown = it.animatedValue as Float
+                onShown?.invoke(shown)
                 val blur = 48f * dens * (1f - shown) * (1f - shown)
                 setRenderEffect(if (blur > 0.5f)
                     RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL) else null)
@@ -189,10 +195,13 @@ class StandbyView(context: Context) : View(context) {
     // ------------------------------------------------------------------ drawing
 
     override fun onDraw(c: Canvas) {
-        c.drawColor(Color.argb((255 * min(1f, shown * 2f)).toInt(), 0, 0, 0))
         val w = pageW
         val h = pageH
         updateMatrix()
+        if (toScreen != lastSent) {
+            lastSent.set(toScreen)
+            onMatrix?.invoke(android.graphics.Matrix(toScreen))
+        }
         c.save()
         c.concat(toScreen)
         for (p in 0 until PAGES) {

@@ -31,7 +31,16 @@ class StandbyActivity : Activity() {
         }
         view = StandbyView(this)
         view.setSide(intent.getIntExtra(EXTRA_SIDE, 1), false)
-        setContentView(view)
+        val backdrop = BackdropView(this).apply {
+            artEnabled = Prefs.blurBackdrop(this@StandbyActivity)
+            alpha = 0f
+        }
+        view.onMatrix = { backdrop.pageMatrix = it }
+        view.onShown = { backdrop.alpha = kotlin.math.min(1f, it * 1.6f) }
+        setContentView(android.widget.FrameLayout(this).apply {
+            addView(backdrop)
+            addView(view)
+        })
         window.insetsController?.apply {
             hide(WindowInsets.Type.systemBars())
             systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE

@@ -53,6 +53,14 @@ class MainActivity : Activity() {
             isChecked = StandbyService.lockedOnly
             setOnCheckedChangeListener { _, on -> StandbyService.lockedOnly = on }
         })
+        root.addView(CheckBox(this).apply {
+            text = "Blurred artwork background while music plays"
+            isChecked = Prefs.blurBackdrop(this@MainActivity)
+            setOnCheckedChangeListener { _, on -> Prefs.setBlurBackdrop(this@MainActivity, on) }
+        })
+        button("Allow notification access (artwork)") {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
         button("Allow opening from background") {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:$packageName")))
