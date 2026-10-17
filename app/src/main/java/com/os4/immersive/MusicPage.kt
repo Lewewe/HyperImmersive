@@ -572,8 +572,11 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     private val visPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
 
     private var visShader: android.graphics.LinearGradient? = null
-    private val visShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
-    private var visShadowRadius = -1f
+    /** Opaque, [BAR_LIFT] of the way to white. */
+    private fun brighter(c: Int): Int {
+        fun ch(v: Int) = (v + (255 - v) * BAR_LIFT).toInt().coerceIn(0, 255)
+        return Color.rgb(ch(Color.red(c)), ch(Color.green(c)), ch(Color.blue(c)))
+    }
     private var visShaderKey = 0L
 
     /**
@@ -595,32 +598,20 @@ class MusicPage(private val context: android.content.Context, private val dens: 
             java.lang.Float.floatToIntBits(cy).toLong()
         if (visShader == null || key != visShaderKey) {
             visShaderKey = key
-            // Fully opaque here: HMC-E's colours keep HyperOS's 0x99 for its own bars, but on
-            // StandBy's blurred backdrop the bars are drawn solid.
+            // StandBy only: solid, and lifted towards white. HMC-E's colours keep HyperOS's 0x99
+            // and the artwork's own shades, which disappear into a backdrop made of that artwork.
             visShader = android.graphics.LinearGradient(0f, cy - box / 2f, 0f, cy + box / 2f,
-                Spectrum.top or OPAQUE, Spectrum.bottom or OPAQUE, Shader.TileMode.CLAMP)
+                brighter(Spectrum.top), brighter(Spectrum.bottom), Shader.TileMode.CLAMP)
         }
         visPaint.shader = visShader
         visPaint.alpha = (255 * alpha).toInt()
         // A light drop shadow under each bar, so bars in the artwork's own colours still read on
         // its backdrop - a blurred dark copy drawn first (a shadow layer on a shaded paint is not
         // drawn by the GPU renderer).
-        // Not a drop shadow (it looked heavy): a faint, even shade right around each bar.
-        visShadow.alpha = (55 * alpha).toInt()
-        if (visShadowRadius != width) {
-            visShadowRadius = width
-            visShadow.maskFilter = android.graphics.BlurMaskFilter(width * 0.8f,
-                android.graphics.BlurMaskFilter.Blur.OUTER)
-        }
-        for (pass in 0..1) {
-            val paint = if (pass == 0) visShadow else visPaint
-            val dy = 0f
-            for (i in 0 until 5) {
-                val bh = (box * (0.09f + 0.85f * Spectrum.levels[i])).coerceAtLeast(width)
-                val x = x0 + i * pitch
-                c.drawRoundRect(x, cy - bh / 2f + dy, x + width, cy + bh / 2f + dy,
-                    width / 2f, width / 2f, paint)
-            }
+        for (i in 0 until 5) {
+            val bh = (box * (0.09f + 0.85f * Spectrum.levels[i])).coerceAtLeast(width)
+            val x = x0 + i * pitch
+            c.drawRoundRect(x, cy - bh / 2f, x + width, cy + bh / 2f, width / 2f, width / 2f, visPaint)
         }
         visPaint.shader = null
     }
@@ -697,7 +688,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         const val FLIP_DAMPING = 0.72f
         /** The visualizer's width, as a share of the page height. */
         const val VIS_W = 0.1f
-        private const val OPAQUE = 0xFF000000.toInt()
+        private const val BAR_LIFT = 0.45f
         const val FLIP_RESPONSE = 0.5f
         /** How much brighter than SystemUI's shader output the bar is drawn. */
         const val BAR_GAIN = 1.45f
