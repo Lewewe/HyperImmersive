@@ -204,7 +204,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         val textW = w - textLeft - h * 0.08f
         drawText(c, out, textLeft, textW, h, enter * (1f - (swap / 0.5f).coerceIn(0f, 1f)), -1f)
         drawText(c, cur, textLeft, textW, h, enter * inT, 1f - inT)
-        drawProgress(c, textLeft, minOf(textW, h * 0.9f), h, enter * (if (cur != null) inT else 0f))
+        drawProgress(c, textLeft, textW, h, enter * (if (cur != null) inT else 0f))
         drawControls(c, textLeft, h, enter)
     }
 
@@ -225,11 +225,47 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     private var seekHold = Float.NaN
     private var seekHoldUntil = 0L
 
+    private val glow = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /**
+     * HyperOS 4's own seek bar look: HyperProgressSeekBar draws its track through a RuntimeShader
+     * (raw/music_player_tracker) with a glowing head texture (miuix_hyper_progressbar_light_head).
+     * Both are read from SystemUI at run time, as the icons are, and set up the way the widget
+     * sets them up; the fill and glow are then exactly the system's.
+     */
+    private val trackShader: android.graphics.RuntimeShader? by lazy {
+        runCatching {
+            val res = sysui!!.resources
+            val raw = res.getIdentifier("music_player_tracker", "raw", "com.android.systemui")
+            val img = res.getIdentifier("miuix_hyper_progressbar_light_head", "drawable",
+                "com.android.systemui")
+            val src = res.openRawResource(raw).bufferedReader().use { it.readText() }
+            val head = android.graphics.BitmapFactory.decodeResource(res, img)
+            android.graphics.RuntimeShader(src).apply {
+                setInputShader("uTex", BitmapShader(head, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP))
+                setFloatUniform("uHeadSize", head.width.toFloat(), head.height.toFloat())
+                setFloatUniform("uHeadGlowAlpha", 1f)
+                setFloatUniform("uTime", 0f)
+                setIntUniform("uIsRtl", 0)
+            }
+        }.getOrNull()
+    }
+    private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /**
+     * HyperOS's media card seek row (miui_media_session: HyperProgressSeekBar between
+     * media_elapsed_time and media_total_time): elapsed time, the bar, total time on one line.
+     * The bar is a 6dp capsule on a #1affffff track, its fill fading up towards a bright,
+     * softly glowing head. Kept from before: the bar grows while a finger scrubs it.
+     */
     private fun drawProgress(c: Canvas, left: Float, width: Float, h: Float, alpha: Float) {
         val d = MediaArt.duration
         if (alpha <= 0f || d <= 0L || width <= 0f) { bar.setEmpty(); return }
         val y = h * 0.56f
-        bar.set(left, y - h * 0.04f, left + width, y + h * 0.04f)
+        val timeW = h * 0.13f
+        val barLeft = left + timeW
+        val barRight = left + width - timeW
+        bar.set(barLeft, y - h * 0.04f, barRight, y + h * 0.04f)
         val now = android.os.SystemClock.uptimeMillis()
         val live = MediaArt.positionNow().toFloat() / d
         if (!seekHold.isNaN() && (now > seekHoldUntil || kotlin.math.abs(live - seekHold) < 0.01f)) {
@@ -237,29 +273,64 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         }
         val f = (if (!scrub.isNaN()) scrub else if (!seekHold.isNaN()) seekHold else live)
             .coerceIn(0f, 1f)
-        val thick = dens * (5f + 5f * grip)
-        track.strokeWidth = thick
-        track.color = Color.argb((70 * alpha).toInt(), 255, 255, 255)
-        c.drawLine(left + thick / 2, y, left + width - thick / 2, y, track)
-        track.color = Color.argb((235 * alpha).toInt(), 255, 255, 255)
-        val end = left + thick / 2 + (width - thick) * f
-        if (f > 0f) c.drawLine(left + thick / 2, y, end, y, track)
 
-        timePaint.textSize = h * 0.04f
-        timePaint.color = Color.argb(((150 + 80 * grip) * alpha).toInt(), 255, 255, 255)
-        val pos = (f * d).toLong()
-        val ty = y + thick / 2 + h * 0.055f
+        val thick = dens * (6f + 6f * grip)
+        val r = thick / 2f
+        val rs = trackShader
+        if (rs != null) {
+            // The widget is 38dp tall around a 6dp track; the head's glow fills that height.
+            val cw = barRight - barLeft
+            val ch = thick * 38f / 6f
+            rs.setFloatUniform("uResolution", cw, ch)
+            rs.setFloatUniform("uTrackCanvasSize", cw, ch)
+            rs.setFloatUniform("uTrackPosition", 0f, ch / 2f)
+            rs.setFloatUniform("uTrackSize", cw, thick)
+            rs.setFloatUniform("uTrackProgress", f)
+            trackPaint.shader = rs
+            // Brighter than the widget's own 128/230 (dark style): measured against the lock
+            // screen card, which sits on the artwork's colour, the bar read dim on the blur.
+            trackPaint.alpha = ((200 + 55 * grip) * alpha).toInt().coerceIn(0, 255)
+            c.save()
+            c.translate(barLeft, y - ch / 2f)
+            c.drawRect(0f, 0f, cw, ch, trackPaint)
+            c.restore()
+        } else drawOwnTrack(c, barLeft, barRight, y, thick, r, f, alpha)
+
+        timePaint.textSize = h * 0.042f
+        timePaint.color = Color.argb((230 * alpha).toInt(), 255, 255, 255)
+        timePaint.textAlign = Paint.Align.CENTER
+        val ty = y - (timePaint.descent() + timePaint.ascent()) / 2f
+        c.drawText(clock((f * d).toLong()), left + timeW / 2f, ty, timePaint)
+        c.drawText(clock(d), left + width - timeW / 2f, ty, timePaint)
         timePaint.textAlign = Paint.Align.LEFT
-        c.drawText(clock(pos), left, ty, timePaint)
-        timePaint.textAlign = Paint.Align.RIGHT
-        c.drawText("-" + clock(d - pos), left + width, ty, timePaint)
-        timePaint.textAlign = Paint.Align.LEFT
+    }
+
+    /** The fallback when SystemUI's shader cannot be had. */
+    private fun drawOwnTrack(c: Canvas, barLeft: Float, barRight: Float, y: Float, thick: Float,
+                             r: Float, f: Float, alpha: Float) {
+        track.strokeWidth = thick
+        track.shader = null
+        track.color = Color.argb((38 * alpha).toInt(), 255, 255, 255)
+        c.drawLine(barLeft + r, y, barRight - r, y, track)
+        val head = barLeft + r + (barRight - barLeft - thick) * f
+        if (f > 0f) {
+            // Normal 128, pressed 230 - HyperProgressSeekBar's progressAlpha / progressPressedAlpha.
+            val a = (128 + (230 - 128) * grip) / 255f * alpha
+            track.shader = android.graphics.LinearGradient(barLeft, y, head + r, y,
+                Color.argb((255 * a * 0.45f).toInt(), 255, 255, 255),
+                Color.argb((255 * a).toInt(), 255, 255, 255), Shader.TileMode.CLAMP)
+            c.drawLine(barLeft + r, y, head, y, track)
+            track.shader = null
+            glow.color = Color.argb((255 * alpha).toInt(), 255, 255, 255)
+            glow.setShadowLayer(dens * 6f, 0f, 0f, Color.argb((200 * alpha).toInt(), 255, 255, 255))
+            c.drawCircle(head, y, r, glow)
+        }
     }
 
     private fun clock(ms: Long): String {
         val t = (ms / 1000).coerceAtLeast(0)
         return if (t >= 3600) "%d:%02d:%02d".format(t / 3600, t / 60 % 60, t % 60)
-        else "%d:%02d".format(t / 60, t % 60)
+        else "%02d:%02d".format(t / 60, t % 60)
     }
 
     private fun setGrip(on: Boolean) {
