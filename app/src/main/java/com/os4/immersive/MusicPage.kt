@@ -572,6 +572,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     private val visPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
 
     private var visShader: android.graphics.LinearGradient? = null
+    private val visShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
+    private var visShadowRadius = -1f
     private var visShaderKey = 0L
 
     /**
@@ -600,15 +602,46 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         }
         visPaint.shader = visShader
         visPaint.alpha = (255 * alpha).toInt()
-        // A very light drop shadow, so bars in the artwork's own colours still read on its
-        // backdrop.
-        visPaint.setShadowLayer(width * 1.2f, 0f, width * 0.4f, Color.argb((70 * alpha).toInt(), 0, 0, 0))
-        for (i in 0 until 5) {
-            val bh = (box * (0.09f + 0.85f * Spectrum.levels[i])).coerceAtLeast(width)
-            val x = x0 + i * pitch
-            c.drawRoundRect(x, cy - bh / 2f, x + width, cy + bh / 2f, width / 2f, width / 2f, visPaint)
+        // A light drop shadow under each bar, so bars in the artwork's own colours still read on
+        // its backdrop - a blurred dark copy drawn first (a shadow layer on a shaded paint is not
+        // drawn by the GPU renderer).
+        visShadow.alpha = (110 * alpha).toInt()
+        if (visShadowRadius != width) {
+            visShadowRadius = width
+            visShadow.maskFilter = android.graphics.BlurMaskFilter(width * 1.1f,
+                android.graphics.BlurMaskFilter.Blur.NORMAL)
+        }
+        for (pass in 0..1) {
+            val paint = if (pass == 0) visShadow else visPaint
+            val dy = if (pass == 0) width * 0.5f else 0f
+            for (i in 0 until 5) {
+                val bh = (box * (0.09f + 0.85f * Spectrum.levels[i])).coerceAtLeast(width)
+                val x = x0 + i * pitch
+                c.drawRoundRect(x, cy - bh / 2f + dy, x + width, cy + bh / 2f + dy,
+                    width / 2f, width / 2f, paint)
+            }
         }
         visPaint.shader = null
+    }
+
+    private var tintFor: Bitmap? = null
+    private var tintColor = Color.BLACK
+
+    /** The artwork's mean colour at a third of its brightness, worked out once per picture. */
+    private fun shadowTint(b: Bitmap): Int {
+        if (b === tintFor) return tintColor
+        tintFor = b
+        tintColor = runCatching {
+            val one = Bitmap.createScaledBitmap(b, 1, 1, true)
+            val px = one.getPixel(0, 0)
+            if (one !== b) one.recycle()
+            val hsv = FloatArray(3)
+            Color.colorToHSV(px, hsv)
+            hsv[1] = (hsv[1] * 1.2f).coerceAtMost(1f)
+            hsv[2] = hsv[2] * 0.35f
+            Color.HSVToColor(hsv)
+        }.getOrDefault(Color.BLACK)
+        return tintColor
     }
 
     private fun cover(c: Canvas, b: Bitmap, cx: Float, cy: Float, side: Float, radius: Float,
@@ -620,10 +653,12 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         val depth = ((scale - PAUSED_SCALE) / (1f - PAUSED_SCALE)).coerceIn(0f, 1.2f)
         // The shape that casts the shadow sits a little inside the cover: drawn at the cover's
         // own edge, its black showed through the artwork's anti-aliased rim as a dark outline.
-        // Softer and lighter than before, so the cover floats rather than sits in a black halo.
+        // The shadow takes the artwork's own colour, deepened, so it sits in the backdrop
+        // (which is made of the same colours) instead of as a grey halo on it.
+        val tint = shadowTint(b)
         shadow.color = Color.argb((255 * alpha).toInt(), 0, 0, 0)
-        shadow.setShadowLayer(dens * (18f + 18f * depth), 0f, dens * (5f + 7f * depth),
-            Color.argb((85 * alpha).toInt(), 0, 0, 0))
+        shadow.setShadowLayer(dens * (22f + 18f * depth), 0f, dens * (6f + 8f * depth),
+            Color.argb((150 * alpha).toInt(), Color.red(tint), Color.green(tint), Color.blue(tint)))
         val inset = 2f * dens
         c.drawRoundRect(rect.left + inset, rect.top + inset, rect.right - inset,
             rect.bottom - inset, radius * scale, radius * scale, shadow)
@@ -659,7 +694,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         const val SWAP_TO = 0.86f
         const val FLIP_DAMPING = 0.72f
         /** The visualizer's width, as a share of the page height. */
-        const val VIS_W = 0.085f
+        const val VIS_W = 0.1f
         private const val OPAQUE = 0xFF000000.toInt()
         const val FLIP_RESPONSE = 0.5f
         /** How much brighter than SystemUI's shader output the bar is drawn. */
