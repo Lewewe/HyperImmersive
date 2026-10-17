@@ -1,0 +1,300 @@
+package com.os4.immersive
+
+import android.animation.ValueAnimator
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.graphics.Typeface
+import android.text.format.DateFormat
+import android.view.MotionEvent
+import android.view.VelocityTracker
+import android.view.View
+import android.view.animation.PathInterpolator
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.TextStyle
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
+
+/**
+ * The StandBy screen, drawn by hand: page 0 is two widgets side by side (an analog clock and the
+ * month), page 1 one big clock - iPhone's first two views. Swiped between like iPhone's pages.
+ *
+ * Entering, the widgets come in from slightly larger, blurred and transparent, one after the
+ * other, the way StandBy settles in once the phone is put on its side; leaving runs it back.
+ */
+class StandbyView(context: Context) : View(context) {
+
+    private val dens = resources.displayMetrics.density
+    private val card = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(28, 28, 30) }
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val bold = Typeface.create(Typeface.DEFAULT, 700, false)
+    private val heavy = Typeface.create(Typeface.DEFAULT, 800, false)
+    private val medium = Typeface.create(Typeface.DEFAULT, 500, false)
+    private val rect = RectF()
+
+    private val accent = Color.rgb(255, 149, 0)
+    private val red = Color.rgb(255, 69, 58)
+
+    // ------------------------------------------------------------------ paging
+
+    private var page = 0f
+    private var dragX = 0f
+    private var dragging = false
+    private var velocity: VelocityTracker? = null
+    private var snap: ValueAnimator? = null
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                snap?.cancel()
+                dragX = e.x
+                dragging = true
+                velocity = VelocityTracker.obtain().apply { addMovement(e) }
+            }
+            MotionEvent.ACTION_MOVE -> if (dragging) {
+                velocity?.addMovement(e)
+                val dx = e.x - dragX
+                dragX = e.x
+                page = (page - dx / width).coerceIn(-0.15f, PAGES - 1 + 0.15f)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                dragging = false
+                val v = velocity?.run { addMovement(e); computeCurrentVelocity(1000); xVelocity } ?: 0f
+                velocity?.recycle()
+                velocity = null
+                val target = when {
+                    v < -800 * dens -> kotlin.math.ceil(page)
+                    v > 800 * dens -> kotlin.math.floor(page)
+                    else -> Math.round(page).toFloat()
+                }.coerceIn(0f, PAGES - 1f)
+                snapTo(target)
+            }
+        }
+        return true
+    }
+
+    private fun snapTo(target: Float) {
+        snap?.cancel()
+        snap = ValueAnimator.ofFloat(page, target).apply {
+            duration = 380
+            interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
+            addUpdateListener { page = it.animatedValue as Float }
+            start()
+        }
+    }
+
+    // ------------------------------------------------------------------ enter / leave
+
+    /** 0 = nothing on screen, 1 = settled. */
+    private var shown = 0f
+    private var shownAnim: ValueAnimator? = null
+
+    fun enter() = animateShown(1f, 900L) {}
+
+    fun leave(done: () -> Unit) = animateShown(0f, 420L, done)
+
+    private fun animateShown(to: Float, ms: Long, done: () -> Unit) {
+        shownAnim?.cancel()
+        shownAnim = ValueAnimator.ofFloat(shown, to).apply {
+            duration = (ms * abs(to - shown)).toLong().coerceAtLeast(1)
+            interpolator = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)
+            addUpdateListener {
+                shown = it.animatedValue as Float
+                val blur = 48f * dens * (1f - shown) * (1f - shown)
+                setRenderEffect(if (blur > 0.5f)
+                    RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL) else null)
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    if (shownAnim === a) done()
+                }
+            })
+            start()
+        }
+    }
+
+    /** One element's share of the entrance, [order] steps behind the first. */
+    private fun stagger(order: Int): Float {
+        val start = order * 0.12f
+        return ((shown - start) / (1f - start)).coerceIn(0f, 1f)
+    }
+
+    // ------------------------------------------------------------------ drawing
+
+    override fun onDraw(c: Canvas) {
+        c.drawColor(Color.argb((255 * min(1f, shown * 2f)).toInt(), 0, 0, 0))
+        val w = width.toFloat()
+        val h = height.toFloat()
+        for (p in 0 until PAGES) {
+            val off = (p - page) * w
+            if (abs(off) >= w) continue
+            c.save()
+            c.translate(off, 0f)
+            when (p) {
+                0 -> drawWidgets(c, w, h)
+                else -> drawBigClock(c, w, h)
+            }
+            c.restore()
+        }
+        // StandBy keeps time to the second; a sweep needs every frame while it is shown.
+        if (isAttachedToWindow) postInvalidateOnAnimation()
+    }
+
+    private fun withEntrance(c: Canvas, order: Int, cx: Float, cy: Float, body: () -> Unit) {
+        val t = stagger(order)
+        if (t <= 0f) return
+        val s = 1.14f - 0.14f * t
+        c.saveLayerAlpha(null, (255 * t).toInt())
+        c.scale(s, s, cx, cy)
+        body()
+        c.restore()
+    }
+
+    private fun drawWidgets(c: Canvas, w: Float, h: Float) {
+        val gap = 16 * dens
+        val side = min(h - 2 * gap, (w - 3 * gap) / 2f)
+        val top = (h - side) / 2f
+        val left = (w - 2 * side - gap) / 2f
+        val r = side * 0.2f
+
+        rect.set(left, top, left + side, top + side)
+        withEntrance(c, 0, rect.centerX(), rect.centerY()) {
+            c.drawRoundRect(rect, r, r, card)
+            drawAnalog(c, rect.centerX(), rect.centerY(), side * 0.42f)
+        }
+        val l2 = left + side + gap
+        rect.set(l2, top, l2 + side, top + side)
+        withEntrance(c, 1, rect.centerX(), rect.centerY()) {
+            c.drawRoundRect(rect, r, r, card)
+            drawCalendar(c, RectF(rect), side)
+        }
+    }
+
+    private fun drawAnalog(c: Canvas, cx: Float, cy: Float, radius: Float) {
+        val now = LocalTime.now()
+        val sec = now.second + now.nano / 1e9f
+        val min = now.minute + sec / 60f
+        val hr = (now.hour % 12) + min / 60f
+
+        for (i in 0 until 60) {
+            val a = Math.toRadians(i * 6.0)
+            val hour = i % 5 == 0
+            val outer = radius
+            val inner = radius - (if (hour) 0.09f else 0.045f) * radius
+            stroke.color = if (hour) Color.WHITE else Color.argb(110, 255, 255, 255)
+            stroke.strokeWidth = (if (hour) 0.022f else 0.01f) * radius
+            c.drawLine(cx + (sin(a) * inner).toFloat(), cy - (cos(a) * inner).toFloat(),
+                cx + (sin(a) * outer).toFloat(), cy - (cos(a) * outer).toFloat(), stroke)
+        }
+        text.color = Color.WHITE
+        text.typeface = medium
+        text.textSize = radius * 0.2f
+        for (n in 1..12) {
+            val a = Math.toRadians(n * 30.0)
+            val rr = radius * 0.74f
+            val x = cx + (sin(a) * rr).toFloat()
+            val y = cy - (cos(a) * rr).toFloat() - (text.descent() + text.ascent()) / 2f
+            c.drawText(n.toString(), x, y, text)
+        }
+        hand(c, cx, cy, hr * 30f, radius * 0.5f, radius * 0.06f, Color.WHITE)
+        hand(c, cx, cy, min * 6f, radius * 0.8f, radius * 0.045f, Color.WHITE)
+        hand(c, cx, cy, sec * 6f, radius * 0.88f, radius * 0.016f, accent, tail = radius * 0.15f)
+        fill.color = accent
+        c.drawCircle(cx, cy, radius * 0.035f, fill)
+        fill.color = Color.BLACK
+        c.drawCircle(cx, cy, radius * 0.015f, fill)
+    }
+
+    private fun hand(c: Canvas, cx: Float, cy: Float, deg: Float, len: Float, width: Float,
+                     color: Int, tail: Float = 0f) {
+        val a = Math.toRadians(deg.toDouble())
+        stroke.color = color
+        stroke.strokeWidth = width
+        c.drawLine(cx - (sin(a) * tail).toFloat(), cy + (cos(a) * tail).toFloat(),
+            cx + (sin(a) * len).toFloat(), cy - (cos(a) * len).toFloat(), stroke)
+    }
+
+    private fun drawCalendar(c: Canvas, box: RectF, side: Float) {
+        val today = LocalDate.now()
+        val pad = side * 0.1f
+        val locale = Locale.getDefault()
+        text.textAlign = Paint.Align.LEFT
+        text.typeface = bold
+        text.color = red
+        text.textSize = side * 0.075f
+        c.drawText(today.month.getDisplayName(TextStyle.FULL, locale).uppercase(locale),
+            box.left + pad, box.top + pad + text.textSize, text)
+
+        val gridTop = box.top + pad + side * 0.16f
+        val colW = (side - 2 * pad) / 7f
+        val rowH = (box.bottom - pad - gridTop) / 7f
+        text.textAlign = Paint.Align.CENTER
+        text.textSize = side * 0.05f
+        text.typeface = bold
+        val first = java.time.DayOfWeek.SUNDAY
+        for (i in 0 until 7) {
+            val d = first.plus(i.toLong())
+            text.color = Color.argb(140, 255, 255, 255)
+            c.drawText(d.getDisplayName(TextStyle.NARROW, locale),
+                box.left + pad + colW * (i + 0.5f), gridTop + rowH * 0.6f, text)
+        }
+        val start = today.withDayOfMonth(1)
+        val lead = (start.dayOfWeek.value % 7)
+        text.textSize = side * 0.06f
+        for (day in 1..today.lengthOfMonth()) {
+            val idx = lead + day - 1
+            val col = idx % 7
+            val row = idx / 7 + 1
+            val x = box.left + pad + colW * (col + 0.5f)
+            val y = gridTop + rowH * (row + 0.5f)
+            val baseline = y - (text.descent() + text.ascent()) / 2f
+            if (day == today.dayOfMonth) {
+                fill.color = red
+                c.drawCircle(x, y, min(colW, rowH) * 0.46f, fill)
+                text.color = Color.WHITE
+            } else {
+                text.color = if (col == 0 || col == 6) Color.argb(130, 255, 255, 255)
+                else Color.WHITE
+            }
+            c.drawText(day.toString(), x, baseline, text)
+        }
+    }
+
+    private fun drawBigClock(c: Canvas, w: Float, h: Float) {
+        val now = LocalTime.now()
+        val h24 = DateFormat.is24HourFormat(context)
+        val hour = if (h24) now.hour else (now.hour + 11) % 12 + 1
+        val digits = (if (h24) "%02d" else "%d").format(hour) + ":" + "%02d".format(now.minute)
+        withEntrance(c, 0, w / 2f, h / 2f) {
+            text.textAlign = Paint.Align.CENTER
+            text.typeface = heavy
+            text.color = Color.rgb(255, 214, 160)
+            text.textSize = h * 0.62f
+            val baseline = h / 2f - (text.descent() + text.ascent()) / 2f + h * 0.05f
+            c.drawText(digits, w / 2f, baseline, text)
+            val today = LocalDate.now()
+            text.typeface = bold
+            text.textSize = h * 0.07f
+            text.color = red
+            c.drawText(today.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()) +
+                " " + today.dayOfMonth, w / 2f, h * 0.16f, text)
+        }
+    }
+
+    companion object {
+        private const val PAGES = 2
+    }
+}
