@@ -18,7 +18,10 @@ import android.os.BatteryManager
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
+import android.graphics.PixelFormat
 import android.util.Log
+import android.view.View
+import android.view.WindowManager
 
 /**
  * Prototype watcher. While the phone charges it listens to the accelerometer and runs
@@ -38,13 +41,15 @@ class StandbyService : Service(), SensorEventListener {
     private var wake: PowerManager.WakeLock? = null
     private val detector = StandbyDetector()
     private var lastState = StandbyDetector.State.IDLE
+    private var anchor: View? = null
+    private var lastTraceAt = 0L
 
     private val battery = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
             val plugged = i.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
             if (plugged != charging) {
                 charging = plugged
-                Log.i(TAG, "charging=$charging")
+                trace("charging=$charging")
                 if (!charging) {
                     detector.unplugged()
                     onState(StandbyDetector.State.IDLE)
@@ -61,7 +66,7 @@ class StandbyService : Service(), SensorEventListener {
         startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         registerReceiver(battery, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         running = true
-        Log.i(TAG, "watching")
+        trace("watching")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -88,7 +93,9 @@ class StandbyService : Service(), SensorEventListener {
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "HyperImmersive:standby")
                 .apply { acquire() }
             sensors.registerListener(this, accel, SensorManager.SENSOR_DELAY_UI)
+            showAnchor(true)
         } else {
+            showAnchor(false)
             sensors.unregisterListener(this)
             wake?.let { if (it.isHeld) it.release() }
             wake = null
@@ -100,6 +107,11 @@ class StandbyService : Service(), SensorEventListener {
     override fun onSensorChanged(e: SensorEvent) {
         val now = SystemClock.uptimeMillis()
         val s = detector.update(now, charging, e.values[0], e.values[1], e.values[2])
+        if (now - lastTraceAt >= 1000) {
+            lastTraceAt = now
+            trace("sample $s ${(detector.progress * 100).toInt()}% land=${detector.landscape} " +
+                "still=${detector.still} x=%.1f y=%.1f z=%.1f".format(e.values[0], e.values[1], e.values[2]))
+        }
         Debug.publish("state=$s ${(detector.progress * 100).toInt()}% landscape=${detector.landscape} " +
             "still=${detector.still}\nx=%.1f y=%.1f z=%.1f".format(e.values[0], e.values[1], e.values[2]))
         onState(s)
@@ -111,17 +123,71 @@ class StandbyService : Service(), SensorEventListener {
         if (s == lastState) return
         val was = lastState
         lastState = s
-        Log.i(TAG, "$was -> $s")
+        trace("$was -> $s")
         if (s == StandbyDetector.State.ACTIVE) {
             val locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked
             if (lockedOnly && !locked) {
-                Log.i(TAG, "unlocked, StandBy waits for the lock screen")
+                trace("unlocked, StandBy waits for the lock screen")
                 return
             }
-            startActivity(Intent(this, StandbyActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
+            launch()
         } else if (was == StandbyDetector.State.ACTIVE) {
             sendBroadcast(Intent(StandbyActivity.ACTION_CLOSE).setPackage(packageName))
+        }
+    }
+
+    /**
+     * A plain startActivity from a service is dropped without a word on the lock screen (the
+     * overlay anchor is hidden there, so it grants nothing). A full-screen intent is how an
+     * alarm takes the lock screen, and it is what opens StandBy here; the activity takes the
+     * notification down as soon as it is up. The direct start stays for the unlocked case.
+     */
+    private fun launch() {
+        val intent = Intent(this, StandbyActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+        runCatching { startActivity(intent) }.onFailure { trace("direct start failed: $it") }
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_SHOW, "StandBy",
+            NotificationManager.IMPORTANCE_HIGH).apply { setSound(null, null) })
+        val pi = android.app.PendingIntent.getActivity(this, 0, intent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
+        nm.notify(SHOW_ID, Notification.Builder(this, CHANNEL_SHOW)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
+            .setContentTitle("StandBy")
+            .setCategory(Notification.CATEGORY_ALARM)
+            .setFullScreenIntent(pi, true)
+            .setTimeoutAfter(10_000)
+            .build())
+        trace("StandBy launched (fsi=${nm.canUseFullScreenIntent()})")
+    }
+
+    /**
+     * Android 15 lets an app with the overlay permission start activities from the background
+     * only while one of its overlay windows is visible. A 1px transparent one, while charging.
+     */
+    private fun showAnchor(on: Boolean) {
+        val wm = getSystemService(WindowManager::class.java)
+        if (!on) {
+            anchor?.let { runCatching { wm.removeView(it) } }
+            anchor = null
+            return
+        }
+        if (anchor != null || !android.provider.Settings.canDrawOverlays(this)) return
+        val v = View(this)
+        val lp = WindowManager.LayoutParams(1, 1,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT)
+        runCatching { wm.addView(v, lp); anchor = v }.onFailure { trace("anchor failed: $it") }
+    }
+
+    private fun trace(msg: String) {
+        Log.i(TAG, msg)
+        runCatching {
+            val f = java.io.File(filesDir, "trace.txt")
+            if (f.length() > 200_000) f.delete()
+            f.appendText(java.time.LocalTime.now().toString().take(12) + " " + msg + "\n")
         }
     }
 
@@ -140,6 +206,8 @@ class StandbyService : Service(), SensorEventListener {
     companion object {
         const val TAG = "HyperImmersive"
         private const val CHANNEL = "watcher"
+        private const val CHANNEL_SHOW = "standby"
+        const val SHOW_ID = 2
         @Volatile var running = false
         /** Like iPhone, StandBy only takes over a locked phone. Off for testing on the desk. */
         @Volatile var lockedOnly = true

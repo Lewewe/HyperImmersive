@@ -36,6 +36,7 @@ class StandbyActivity : Activity() {
             systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         registerReceiver(close, IntentFilter(ACTION_CLOSE), RECEIVER_NOT_EXPORTED)
+        getSystemService(android.app.NotificationManager::class.java).cancel(StandbyService.SHOW_ID)
         view.post { view.enter() }
     }
 
