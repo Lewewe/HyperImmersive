@@ -244,9 +244,9 @@ class MusicPage(private val context: android.content.Context, private val dens: 
             android.graphics.RuntimeShader(src).apply {
                 setInputShader("uTex", BitmapShader(head, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP))
                 setFloatUniform("uHeadSize", head.width.toFloat(), head.height.toFloat())
-                // The gain below brightens the bar; the head's glow is held back by the same
-                // factor so it stays at the system's own strength.
-                setFloatUniform("uHeadGlowAlpha", 1f / BAR_GAIN)
+                // The gain below brightens the bar; the head's glow is held back so the brighter
+                // bar does not make it glare - [GLOW] of the system's own strength.
+                setFloatUniform("uHeadGlowAlpha", GLOW / BAR_GAIN)
                 setFloatUniform("uTime", 0f)
                 setIntUniform("uIsRtl", 0)
             }
@@ -492,5 +492,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         const val SWAP_TO = 0.86f
         /** How much brighter than SystemUI's shader output the bar is drawn. */
         const val BAR_GAIN = 1.45f
+        /** The head's glow against SystemUI's, after [BAR_GAIN]. */
+        const val GLOW = 0.5f
     }
 }
