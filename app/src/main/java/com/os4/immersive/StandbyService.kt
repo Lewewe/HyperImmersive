@@ -43,6 +43,7 @@ class StandbyService : Service(), SensorEventListener {
     private var lastState = StandbyDetector.State.IDLE
     private var anchor: View? = null
     private var lastTraceAt = 0L
+    private var lastX = 0f
 
     private val battery = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
@@ -106,6 +107,7 @@ class StandbyService : Service(), SensorEventListener {
 
     override fun onSensorChanged(e: SensorEvent) {
         val now = SystemClock.uptimeMillis()
+        lastX = e.values[0]
         val s = detector.update(now, charging, e.values[0], e.values[1], e.values[2])
         if (now - lastTraceAt >= 1000) {
             lastTraceAt = now
@@ -145,6 +147,7 @@ class StandbyService : Service(), SensorEventListener {
     private fun launch() {
         val intent = Intent(this, StandbyActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            .putExtra(StandbyActivity.EXTRA_SIDE, if (lastX >= 0f) 1 else -1)
         runCatching { startActivity(intent) }.onFailure { trace("direct start failed: $it") }
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL_SHOW, "StandBy",

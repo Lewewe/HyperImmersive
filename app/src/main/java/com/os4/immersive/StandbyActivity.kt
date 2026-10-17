@@ -30,6 +30,7 @@ class StandbyActivity : Activity() {
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
         view = StandbyView(this)
+        view.setSide(intent.getIntExtra(EXTRA_SIDE, 1), false)
         setContentView(view)
         window.insetsController?.apply {
             hide(WindowInsets.Type.systemBars())
@@ -38,6 +39,33 @@ class StandbyActivity : Activity() {
         registerReceiver(close, IntentFilter(ACTION_CLOSE), RECEIVER_NOT_EXPORTED)
         getSystemService(android.app.NotificationManager::class.java).cancel(StandbyService.SHOW_ID)
         view.post { view.enter() }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        view.setSide(intent.getIntExtra(EXTRA_SIDE, 1), false)
+    }
+
+    /** Turned over onto the other long edge while shown: the page turns with it. */
+    private val sideListener = object : android.hardware.SensorEventListener {
+        override fun onSensorChanged(e: android.hardware.SensorEvent) {
+            val x = e.values[0]
+            if (x > 6f) view.setSide(1, true) else if (x < -6f) view.setSide(-1, true)
+        }
+        override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val sm = getSystemService(android.hardware.SensorManager::class.java)
+        sm.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)?.let {
+            sm.registerListener(sideListener, it, android.hardware.SensorManager.SENSOR_DELAY_UI)
+        }
+    }
+
+    override fun onPause() {
+        getSystemService(android.hardware.SensorManager::class.java).unregisterListener(sideListener)
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -59,5 +87,6 @@ class StandbyActivity : Activity() {
 
     companion object {
         const val ACTION_CLOSE = "com.os4.immersive.STANDBY_CLOSE"
+        const val EXTRA_SIDE = "side"
     }
 }

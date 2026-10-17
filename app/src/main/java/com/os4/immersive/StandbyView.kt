@@ -56,7 +56,61 @@ class StandbyView(context: Context) : View(context) {
     private var velocity: VelocityTracker? = null
     private var snap: ValueAnimator? = null
 
-    override fun onTouchEvent(e: MotionEvent): Boolean {
+    // ------------------------------------------------------------------ orientation
+
+    /**
+     * The window stays portrait - the lock screen never rotates, so neither does the system -
+     * and the landscape page is drawn turned a quarter round instead. [side] is which long edge
+     * is up: +1 when the device's right edge is (accelerometer x positive), -1 for the left.
+     */
+    private var side = 1
+    private var angle = 90f
+    private var turnAnim: ValueAnimator? = null
+    private val toScreen = android.graphics.Matrix()
+    private val toPage = android.graphics.Matrix()
+
+    fun setSide(s: Int, animate: Boolean) {
+        if (s == side && turnAnim == null) return
+        side = s
+        val target = 90f * s
+        turnAnim?.cancel()
+        if (!animate) {
+            angle = target
+            turnAnim = null
+            return
+        }
+        turnAnim = ValueAnimator.ofFloat(angle, target).apply {
+            duration = 520
+            interpolator = PathInterpolator(0.3f, 0f, 0.1f, 1f)
+            addUpdateListener { angle = it.animatedValue as Float }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    if (turnAnim === a) turnAnim = null
+                }
+            })
+            start()
+        }
+    }
+
+    /** The page's own size: the screen's, turned. */
+    private val pageW get() = height.toFloat()
+    private val pageH get() = width.toFloat()
+
+    private fun updateMatrix() {
+        toScreen.reset()
+        toScreen.postTranslate(-pageW / 2f, -pageH / 2f)
+        toScreen.postRotate(angle)
+        toScreen.postTranslate(width / 2f, height / 2f)
+        toScreen.invert(toPage)
+    }
+
+    override fun onTouchEvent(raw: MotionEvent): Boolean {
+        updateMatrix()
+        val e = MotionEvent.obtain(raw).apply { transform(toPage) }
+        try { return onPageTouch(e) } finally { e.recycle() }
+    }
+
+    private fun onPageTouch(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 snap?.cancel()
@@ -68,7 +122,7 @@ class StandbyView(context: Context) : View(context) {
                 velocity?.addMovement(e)
                 val dx = e.x - dragX
                 dragX = e.x
-                page = (page - dx / width).coerceIn(-0.15f, PAGES - 1 + 0.15f)
+                page = (page - dx / pageW).coerceIn(-0.15f, PAGES - 1 + 0.15f)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 dragging = false
@@ -136,8 +190,11 @@ class StandbyView(context: Context) : View(context) {
 
     override fun onDraw(c: Canvas) {
         c.drawColor(Color.argb((255 * min(1f, shown * 2f)).toInt(), 0, 0, 0))
-        val w = width.toFloat()
-        val h = height.toFloat()
+        val w = pageW
+        val h = pageH
+        updateMatrix()
+        c.save()
+        c.concat(toScreen)
         for (p in 0 until PAGES) {
             val off = (p - page) * w
             if (abs(off) >= w) continue
@@ -149,6 +206,7 @@ class StandbyView(context: Context) : View(context) {
             }
             c.restore()
         }
+        c.restore()
         // StandBy keeps time to the second; a sweep needs every frame while it is shown.
         if (isAttachedToWindow) postInvalidateOnAnimation()
     }
