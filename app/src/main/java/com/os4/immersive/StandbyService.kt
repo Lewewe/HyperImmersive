@@ -150,6 +150,15 @@ class StandbyService : Service(), SensorEventListener {
      * notification down as soon as it is up. The direct start stays for the unlocked case.
      */
     private fun launch() {
+        // HyperOS can leave an allowed listener unbound (an update, a denied autostart): ask
+        // again each time StandBy opens, so the music page is not left saying Not Playing.
+        if (!MediaArt.connected) {
+            trace("listener unbound, asking for a rebind")
+            runCatching {
+                android.service.notification.NotificationListenerService.requestRebind(
+                    android.content.ComponentName(this, MediaListener::class.java))
+            }
+        }
         val intent = Intent(this, StandbyActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
             .putExtra(StandbyActivity.EXTRA_SIDE, if (lastX >= 0f) 1 else -1)

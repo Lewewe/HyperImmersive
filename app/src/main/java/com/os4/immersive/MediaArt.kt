@@ -97,7 +97,12 @@ object MediaArt {
         override fun onSessionDestroyed() = refresh()
     }
 
+    /** The listener is bound: without it there is no session to read and the page is empty. */
+    @Volatile var connected = false
+        private set
+
     internal fun connect(context: Context, listener: ComponentName) {
+        connected = true
         component = listener
         val m = context.getSystemService(MediaSessionManager::class.java)
         manager = m
@@ -108,6 +113,7 @@ object MediaArt {
     }
 
     internal fun disconnect() {
+        connected = false
         runCatching { manager?.removeOnActiveSessionsChangedListener(sessions) }
         controller?.unregisterCallback(callback)
         controller = null
