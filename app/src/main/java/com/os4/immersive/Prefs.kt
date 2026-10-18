@@ -13,4 +13,13 @@ object Prefs {
 
     fun setBlurBackdrop(c: Context, on: Boolean) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .edit().putBoolean(BLUR, on).apply()
+
+    private const val PAGES = "custom_pages"
+
+    /** Pages the user added below the built-in ones (empty for now, to be filled later). */
+    fun customPages(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        .getInt(PAGES, 0)
+
+    fun setCustomPages(c: Context, n: Int) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        .edit().putInt(PAGES, n).apply()
 }

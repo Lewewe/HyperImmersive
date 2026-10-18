@@ -53,6 +53,12 @@ class StandbyView(context: Context) : View(context) {
 
     private var page = 0f
 
+    /** Pages the user added, after the built-in three; the add page comes last of all. */
+    private var custom = Prefs.customPages(context)
+    private val pages get() = BUILT_IN + custom + 1
+    private val addPage get() = pages - 1
+    private val last get() = (pages - 1).toFloat()
+
     private val music = MusicPage(context, dens) { invalidate() }
     /** Swiped by hand: from then on the page stays where the user put it. */
     private var userPaged = false
@@ -200,6 +206,7 @@ class StandbyView(context: Context) : View(context) {
                 held = if (onMusic) music.buttonAt(e.x, e.y) else -1
                 if (held >= 0) { music.press(held); return true }
                 userPaged = true
+                if (abs(page - addPage) < 0.05f && addHit(e.x, e.y)) addPressed = true
                 if (snap?.isRunning != true) leaving = Math.round(page)
                 snap?.cancel()
                 dragX = e.y
@@ -220,15 +227,17 @@ class StandbyView(context: Context) : View(context) {
                 }
             } else if (dragging) {
                 velocity?.addMovement(e)
+                if (abs(e.y - downY) > 12 * dens) addPressed = false
                 // Up and down, like iPhone's StandBy stacks: a swipe up brings the next page.
                 // Past either end it gives a little, harder the further it is pulled.
                 val dy = e.y - dragX
                 dragX = e.y
-                val edge = page < 0f || page > PAGES - 1f
+                val edge = page < 0f || page > last
                 page = (page - dy / (pageH * 0.75f) * (if (edge) 0.35f else 1f))
-                    .coerceIn(-0.2f, PAGES - 1 + 0.2f)
+                    .coerceIn(-0.2f, last + 0.2f)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                addPressed = false
                 if (scrubbing) {
                     scrubbing = false
                     music.scrubEnd(e.actionMasked == MotionEvent.ACTION_UP)
@@ -241,6 +250,15 @@ class StandbyView(context: Context) : View(context) {
                 }
                 if (!dragging) return true
                 dragging = false
+                dotsUntil = SystemClock.uptimeMillis() + DOTS_LINGER_MS
+                val tap = e.actionMasked == MotionEvent.ACTION_UP &&
+                    abs(e.x - downX) < 12 * dens && abs(e.y - downY) < 12 * dens
+                if (tap && abs(page - addPage) < 0.05f && addHit(e.x, e.y)) {
+                    velocity?.recycle()
+                    velocity = null
+                    addNewPage()
+                    return true
+                }
                 val v = velocity?.run { addMovement(e); computeCurrentVelocity(1000); yVelocity } ?: 0f
                 velocity?.recycle()
                 velocity = null
@@ -248,7 +266,7 @@ class StandbyView(context: Context) : View(context) {
                     v < -800 * dens -> kotlin.math.ceil(page)
                     v > 800 * dens -> kotlin.math.floor(page)
                     else -> Math.round(page).toFloat()
-                }.coerceIn(0f, PAGES - 1f)
+                }.coerceIn(0f, last)
                 snapTo(target)
             }
         }
@@ -328,7 +346,7 @@ class StandbyView(context: Context) : View(context) {
         // No fade - the two stay solid and never overlap.
         // In transit a page is also blurred, more the further it is from rest - recorded into
         // its own RenderNode so the blur is the page's alone.
-        for (p in 0 until PAGES) {
+        for (p in 0 until pages) {
             val d = p - page
             val far = abs(d)
             if (far >= 1f) continue
@@ -341,7 +359,7 @@ class StandbyView(context: Context) : View(context) {
             // Only the page on its way out blurs; the one coming in arrives sharp.
             val blur = if (p == leaving) PAGE_BLUR_DP * dens * far else 0f
             if (blur > 0.5f && c is android.graphics.RecordingCanvas) {
-                val node = pageNodes[p]
+                val node = pageNode(p)
                 node.setPosition(0, 0, w.toInt(), h.toInt())
                 val rc = node.beginRecording(w.toInt(), h.toInt())
                 try { drawPage(rc, p, w, h) } finally { node.endRecording() }
@@ -350,6 +368,7 @@ class StandbyView(context: Context) : View(context) {
             } else drawPage(c, p, w, h)
             c.restore()
         }
+        drawDots(c, w, h)
         c.restore()
         // StandBy keeps time to the second; a sweep needs every frame while it is shown.
         if (!isAttachedToWindow) return
@@ -359,13 +378,163 @@ class StandbyView(context: Context) : View(context) {
     /** The page a swipe started from - the one that is leaving, or -1 at rest. */
     private var leaving = -1
 
-    private val pageNodes = Array(PAGES) { android.graphics.RenderNode("standby-page-$it") }
+    private val pageNodes = ArrayList<android.graphics.RenderNode>()
+
+    private fun pageNode(p: Int): android.graphics.RenderNode {
+        while (pageNodes.size <= p) pageNodes += android.graphics.RenderNode("standby-page-${pageNodes.size}")
+        return pageNodes[p]
+    }
 
     private fun drawPage(c: Canvas, p: Int, w: Float, h: Float) {
         when (p) {
             0 -> music.draw(c, w, h, stagger(0))
             1 -> drawWidgets(c, w, h)
-            else -> drawBigClock(c, w, h)
+            2 -> drawBigClock(c, w, h)
+            addPage -> drawAddPage(c, w, h)
+            else -> drawCustomPage(c, w, h, p - BUILT_IN)
+        }
+    }
+
+    // ------------------------------------------------------------------ page dots
+
+    /**
+     * iPhone's StandBy shows where it is in a stack only while it is being swiped: a column of
+     * dots at the right edge, the current one white. Here they fade in as a swipe starts and
+     * out [DOTS_LINGER_MS] after it settles; the add page's dot is a small plus.
+     */
+    private var dotsAlpha = 0f
+    private var dotsUntil = 0L
+    private var dotsDrawnAt = 0L
+
+    private fun drawDots(c: Canvas, w: Float, h: Float) {
+        val now = SystemClock.uptimeMillis()
+        val want = dragging || snap?.isRunning == true || now < dotsUntil
+        val dt = if (dotsDrawnAt == 0L) 0f else ((now - dotsDrawnAt) / 1000f).coerceAtMost(0.1f)
+        dotsDrawnAt = now
+        val step = dt / if (want) 0.18f else 0.35f
+        dotsAlpha = if (want) min(1f, dotsAlpha + step) else maxOf(0f, dotsAlpha - step)
+        if (dotsAlpha <= 0f) return
+        val a = dotsAlpha * stagger(0)
+        val n = pages
+        val r = 3.2f * dens
+        val pitch = 13f * dens
+        val x = w - 16f * dens
+        val top = h / 2f - pitch * (n - 1) / 2f
+        for (i in 0 until n) {
+            val y = top + pitch * i
+            // The current page brightens as the swipe nears it.
+            val near = (1f - abs(i - page)).coerceIn(0f, 1f)
+            val alpha = (255 * a * (0.32f + 0.68f * near)).toInt()
+            if (i == addPage) {
+                stroke.color = Color.argb(alpha, 255, 255, 255)
+                stroke.strokeWidth = 1.6f * dens
+                val k = r * (1.05f + 0.15f * near)
+                c.drawLine(x - k, y, x + k, y, stroke)
+                c.drawLine(x, y - k, x, y + k, stroke)
+            } else {
+                fill.color = Color.argb(alpha, 255, 255, 255)
+                c.drawCircle(x, y, r * (1f + 0.15f * near), fill)
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ add page
+
+    /** The add page's tile, in page coordinates. */
+    private val addBox = RectF()
+    private var addPressed = false
+    private var press = 0f
+    /** 0..1 pop of the page just added. */
+    private var born = 1f
+    private var bornAnim: ValueAnimator? = null
+
+    private fun addBoxFor(w: Float, h: Float): RectF {
+        val side = h * 0.62f
+        addBox.set(w / 2f - side * 0.8f, h / 2f - side / 2f, w / 2f + side * 0.8f, h / 2f + side / 2f)
+        return addBox
+    }
+
+    private fun addHit(x: Float, y: Float) = addBoxFor(pageW, pageH).contains(x, y)
+
+    private fun addNewPage() {
+        if (custom >= MAX_CUSTOM) return
+        custom++
+        Prefs.setCustomPages(context, custom)
+        // The new page takes the add page's place; the add page moves one further down.
+        snap?.cancel()
+        leaving = -1
+        page = (BUILT_IN + custom - 1).toFloat()
+        dotsUntil = SystemClock.uptimeMillis() + DOTS_LINGER_MS
+        bornAnim?.cancel()
+        bornAnim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 520
+            interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
+            addUpdateListener { born = it.animatedValue as Float }
+            start()
+        }
+        performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+    }
+
+    private val dash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        pathEffect = android.graphics.DashPathEffect(floatArrayOf(10f * dens, 8f * dens), 0f)
+    }
+
+    private fun drawAddPage(c: Canvas, w: Float, h: Float) {
+        val box = addBoxFor(w, h)
+        press += ((if (addPressed) 1f else 0f) - press) * 0.35f
+        val full = custom >= MAX_CUSTOM
+        withEntrance(c, 0, w / 2f, h / 2f) {
+            c.save()
+            val s = 1f - 0.04f * press
+            c.scale(s, s, box.centerX(), box.centerY())
+            val r = box.height() * 0.2f
+            fill.color = Color.argb((22 + 18 * press).toInt(), 255, 255, 255)
+            c.drawRoundRect(box, r, r, fill)
+            dash.color = Color.argb(90, 255, 255, 255)
+            dash.strokeWidth = 2f * dens
+            c.drawRoundRect(box, r, r, dash)
+            val cx = box.centerX()
+            val cy = box.centerY() - box.height() * 0.08f
+            val k = box.height() * 0.11f
+            fill.color = Color.argb(if (full) 40 else 60, 255, 255, 255)
+            c.drawCircle(cx, cy, k * 1.6f, fill)
+            stroke.color = Color.argb(if (full) 110 else 255, 255, 255, 255)
+            stroke.strokeWidth = k * 0.22f
+            c.drawLine(cx - k * 0.7f, cy, cx + k * 0.7f, cy, stroke)
+            c.drawLine(cx, cy - k * 0.7f, cx, cy + k * 0.7f, stroke)
+            text.textAlign = Paint.Align.CENTER
+            text.typeface = bold
+            text.textSize = box.height() * 0.085f
+            text.color = Color.argb(200, 255, 255, 255)
+            c.drawText(if (full) "Page limit reached" else "New page", cx,
+                box.centerY() + box.height() * 0.3f, text)
+            c.restore()
+        }
+    }
+
+    /** A page the user added; empty until it can be filled with widgets. */
+    private fun drawCustomPage(c: Canvas, w: Float, h: Float, index: Int) {
+        val pop = if (index == custom - 1) born else 1f
+        withEntrance(c, 0, w / 2f, h / 2f) {
+            c.save()
+            val s = 0.9f + 0.1f * pop
+            c.scale(s, s, w / 2f, h / 2f)
+            val box = addBoxFor(w, h)
+            val r = box.height() * 0.2f
+            fill.color = Color.argb((22 * pop).toInt(), 255, 255, 255)
+            c.drawRoundRect(box, r, r, fill)
+            text.textAlign = Paint.Align.CENTER
+            text.typeface = bold
+            text.textSize = box.height() * 0.1f
+            text.color = Color.argb((220 * pop).toInt(), 255, 255, 255)
+            c.drawText("Page ${index + 1}", box.centerX(), box.centerY() - box.height() * 0.02f, text)
+            text.typeface = medium
+            text.textSize = box.height() * 0.065f
+            text.color = Color.argb((120 * pop).toInt(), 255, 255, 255)
+            c.drawText("Empty - widgets come later", box.centerX(),
+                box.centerY() + box.height() * 0.14f, text)
+            c.restore()
         }
     }
 
@@ -511,7 +680,10 @@ class StandbyView(context: Context) : View(context) {
     }
 
     companion object {
-        private const val PAGES = 3
+        /** Music, widgets, big clock. */
+        private const val BUILT_IN = 3
+        private const val MAX_CUSTOM = 8
+        private const val DOTS_LINGER_MS = 1_200L
         private const val IDLE_AFTER_MS = 60_000L
         /** How small a page gets on its way out (and in), at a whole page away. */
         private const val PAGE_SHRINK = 0.3f
