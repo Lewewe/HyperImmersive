@@ -16,7 +16,7 @@ import android.provider.Settings
  * HyperImmersive has no screen of its own: it is an extension of HyperMusicCover-Enhanced, whose
  * Extensions page reads and sets it through [call] (as it does HyperCanvas). Only HMC-E, signed
  * like this app, is answered.
- * - `query`: its state, see [state].
+ * - `query`: its state, see [state]; also starts the watcher if it should be running.
  * - `configure`: any of `enabled` (the watcher), `blurBackdrop`, `idleSeconds`, `offSeconds`; returns the state.
  * - `preview`: StandBy now, whatever the phone is doing.
  */
@@ -39,14 +39,31 @@ class Bridge : ContentProvider() {
                 }
             }
             "preview" -> preview(c)
-            "query" -> Unit
+            // After an install nothing has started the watcher yet, and the boot receiver may not fire.
+            "query" -> if (!StandbyService.running) watch(c)
             else -> return null
         }
         return state(c)
     }
 
+    /** Whether SystemUI has [Hooks] loaded; null when it did not answer in time. */
+    private fun hookActive(c: Context): Boolean? {
+        val done = java.util.concurrent.CountDownLatch(1)
+        var active = false
+        c.sendOrderedBroadcast(Intent(EdgeLock.ACTION).setPackage(EdgeLock.SYSTEMUI)
+            .putExtra(EdgeLock.PING, true).addFlags(Intent.FLAG_RECEIVER_FOREGROUND), null,
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    active = resultCode == EdgeLock.LOADED
+                    done.countDown()
+                }
+            }, android.os.Handler(android.os.Looper.getMainLooper()), 0, null, null)
+        return if (done.await(HOOK_ANSWER_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) active else null
+    }
+
     private fun state(c: Context) = Bundle().apply {
         putBoolean("installed", true)
+        hookActive(c)?.let { putBoolean("hookActive", it) }
         putString("version", runCatching {
             c.packageManager.getPackageInfo(c.packageName, 0).versionName
         }.getOrNull())
@@ -94,6 +111,7 @@ class Bridge : ContentProvider() {
     companion object {
         private const val HMC = "com.yzc26623.HyperMusicCoverEnhanced"
         private const val PREVIEW_ANCHOR_MS = 200L
+        private const val HOOK_ANSWER_MS = 1_500L
 
         /** HI is an extension: without HMC-E, signed like this app, it does not run. */
         fun hmcReady(c: Context) = runCatching {

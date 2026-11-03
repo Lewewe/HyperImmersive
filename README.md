@@ -5,6 +5,7 @@
   <h1>HyperImmersive</h1>
   <p><strong>iPhone-style StandBy on the HyperOS 4 lock screen.</strong></p>
   <p>
+    <a href="https://github.com/Lewewe/HyperImmersive/releases"><img alt="Download" src="https://img.shields.io/github/v/release/Lewewe/HyperImmersive?include_prereleases&amp;style=flat-square&amp;label=Download&amp;color=f38caf" /></a>
     <a href="https://t.me/HyperMusicCoverEnhanced"><img alt="Official Telegram group" src="https://img.shields.io/badge/Telegram-Official_group-26A5E4?style=flat-square&amp;logo=telegram" /></a>
     <a href="LICENSE"><img alt="License AGPL-3.0" src="https://img.shields.io/badge/License-AGPL--3.0-ffaaa3?style=flat-square" /></a>
   </p>
@@ -29,15 +30,13 @@
 
 **Requires:** rooted HyperOS 4 (Android 15+), LSPosed and HyperMusicCover-Enhanced newer than v1.0.1.
 
-There is no prebuilt APK yet, so build it first (see [Build](#build)).
-
-1. Install the APK. It has no launcher icon.
-2. In HyperMusicCover-Enhanced, open **Extensions → HyperImmersive**.
-3. Tap **Grant permissions (root)**.
-4. Enable HyperImmersive in LSPosed with System UI in its scope, then restart System UI.
+1. In HyperMusicCover-Enhanced, open **Extensions → HyperImmersive → Download**.
+2. Tap **Request hook permissions** and enable HyperImmersive in LSPosed with System UI in its scope.
+3. Tap **Restart hooks to finish setup**.
+4. Open **HyperImmersive** and tap **Grant permissions (root)**.
 5. Charge the phone and turn it on its side while it is locked, or tap **Preview StandBy**.
 
-All settings live in HyperMusicCover-Enhanced.
+All settings live in HyperMusicCover-Enhanced, including **Uninstall HyperImmersive**. The app has no launcher icon.
 
 ## Build
 

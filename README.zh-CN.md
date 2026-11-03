@@ -5,6 +5,7 @@
   <h1>HyperImmersive</h1>
   <p><strong>为 HyperOS 4 锁屏带来 iPhone 风格的待机显示（StandBy）。</strong></p>
   <p>
+    <a href="https://github.com/Lewewe/HyperImmersive/releases"><img alt="下载" src="https://img.shields.io/github/v/release/Lewewe/HyperImmersive?include_prereleases&amp;style=flat-square&amp;label=Download&amp;color=f38caf" /></a>
     <a href="https://t.me/HyperMusicCoverEnhanced"><img alt="官方 Telegram 群组" src="https://img.shields.io/badge/Telegram-Official_group-26A5E4?style=flat-square&amp;logo=telegram" /></a>
     <a href="LICENSE"><img alt="AGPL-3.0 许可证" src="https://img.shields.io/badge/License-AGPL--3.0-ffaaa3?style=flat-square" /></a>
   </p>
@@ -29,15 +30,13 @@
 
 **需要：** 已 root 的 HyperOS 4（Android 15+）、LSPosed，以及高于 v1.0.1 的 HyperMusicCover-Enhanced。
 
-目前还没有预构建的 APK，请先自行构建（见[构建](#构建)）。
-
-1. 安装 APK。它没有桌面图标。
-2. 在 HyperMusicCover-Enhanced 中打开 **Extensions → HyperImmersive**。
-3. 点击 **Grant permissions (root)**。
-4. 在 LSPosed 中启用 HyperImmersive，作用域包含系统界面，然后重启系统界面。
+1. 在 HyperMusicCover-Enhanced 中打开 **Extensions → HyperImmersive → Download**。
+2. 点击 **Request hook permissions**，在 LSPosed 中启用 HyperImmersive，作用域包含系统界面。
+3. 点击 **Restart hooks to finish setup**。
+4. 打开 **HyperImmersive**，点击 **Grant permissions (root)**。
 5. 在锁屏状态下充电并横放手机，或点击 **Preview StandBy**。
 
-所有设置都在 HyperMusicCover-Enhanced 中。
+所有设置都在 HyperMusicCover-Enhanced 中，包括 **Uninstall HyperImmersive**。应用没有桌面图标。
 
 ## 构建
 

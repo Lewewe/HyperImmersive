@@ -26,6 +26,8 @@ import android.view.WindowManager
 object EdgeLock {
     const val ACTION = "com.os4.immersive.EDGE_LOCK"
     const val SYSTEMUI = "com.android.systemui"
+    const val PING = "ping"
+    const val LOADED = 1
     const val REPEAT_MS = 1_000L
     private const val EXPIRE_MS = 3_000L
     const val APP = "com.yzc26623.HyperImmersive"
@@ -68,6 +70,11 @@ object EdgeLock {
     fun listen(app: Application) {
         app.registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
+                // Bridge asking whether this hook is loaded: says nothing and does nothing else.
+                if (i.getBooleanExtra(PING, false)) {
+                    resultCode = LOADED
+                    return
+                }
                 if (sentFromPackage != APP) return
                 if (i.getBooleanExtra("sleep", false)) {
                     goToSleep(c)
