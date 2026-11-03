@@ -1,0 +1,5 @@
+# Modern Xposed module metadata, as HyperMusicCover-Enhanced's. HyperImmersive hooks only to turn the screen off and keep
+# the system's edge gestures off while StandBy holds the lock screen - see EdgeLock.
+minApiVersion=102
+targetApiVersion=102
+staticScope=true

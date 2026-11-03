@@ -134,8 +134,12 @@ object MediaArt {
     private fun refresh() {
         val c = controller
         val state = c?.playbackState?.state
-        val active = state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_PAUSED ||
-            state == PlaybackState.STATE_BUFFERING
+        // Between tracks a player passes through buffering or skipping: still playing, for the
+        // page, or the cover shrank as if paused and grew back on every track change.
+        val run = state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING ||
+            state == PlaybackState.STATE_CONNECTING || state == PlaybackState.STATE_SKIPPING_TO_NEXT ||
+            state == PlaybackState.STATE_SKIPPING_TO_PREVIOUS || state == PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM
+        val active = run || state == PlaybackState.STATE_PAUSED
         val md = c?.metadata
         playback = c?.playbackState
         duration = md?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.coerceAtLeast(0L) ?: 0L
@@ -145,7 +149,7 @@ object MediaArt {
         val t = md?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
         val a = (md?.getString(MediaMetadata.METADATA_KEY_ARTIST)
             ?: md?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)).orEmpty()
-        set(fromSession ?: fromNotification, active, state == PlaybackState.STATE_PLAYING,
+        set(fromSession ?: fromNotification, active, run,
             t, a, "${c?.packageName}|$t|$a")
     }
 

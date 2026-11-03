@@ -18,10 +18,7 @@ import android.os.BatteryManager
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
-import android.graphics.PixelFormat
 import android.util.Log
-import android.view.View
-import android.view.WindowManager
 
 /**
  * Prototype watcher. While the phone charges it listens to the accelerometer and runs
@@ -41,8 +38,6 @@ class StandbyService : Service(), SensorEventListener {
     private var wake: PowerManager.WakeLock? = null
     private val detector = StandbyDetector()
     private var lastState = StandbyDetector.State.IDLE
-    private var anchor: View? = null
-    private var lastTraceAt = 0L
     private var lastX = 0f
 
     private val battery = object : BroadcastReceiver() {
@@ -52,6 +47,7 @@ class StandbyService : Service(), SensorEventListener {
                 charging = plugged
                 trace("charging=$charging")
                 if (!charging) {
+                    release()
                     detector.unplugged()
                     onState(StandbyDetector.State.IDLE)
                 }
@@ -64,7 +60,8 @@ class StandbyService : Service(), SensorEventListener {
         super.onCreate()
         sensors = getSystemService(SensorManager::class.java)
         accel = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        startForeground(WATCHER_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        heldOff = Prefs.heldOff(this)
         registerReceiver(battery, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         running = true
         // Ask for the artwork listener to be bound again: after an update it can stay unbound.
@@ -88,6 +85,11 @@ class StandbyService : Service(), SensorEventListener {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private fun release() {
+        heldOff = false
+        Prefs.setHeldOff(this, false)
+    }
+
     private fun updateListening() {
         val want = charging && accel != null
         if (want == listening) return
@@ -99,9 +101,7 @@ class StandbyService : Service(), SensorEventListener {
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "HyperImmersive:standby")
                 .apply { acquire() }
             sensors.registerListener(this, accel, SensorManager.SENSOR_DELAY_UI)
-            showAnchor(true)
         } else {
-            showAnchor(false)
             sensors.unregisterListener(this)
             wake?.let { if (it.isHeld) it.release() }
             wake = null
@@ -114,12 +114,18 @@ class StandbyService : Service(), SensorEventListener {
         val now = SystemClock.uptimeMillis()
         lastX = e.values[0]
         val s = detector.update(now, charging, e.values[0], e.values[1], e.values[2])
-        if (now - lastTraceAt >= 1000) {
-            lastTraceAt = now
-            trace("sample $s ${(detector.progress * 100).toInt()}% land=${detector.landscape} " +
-                "still=${detector.still} x=%.1f y=%.1f z=%.1f".format(e.values[0], e.values[1], e.values[2]))
+        // Sent away: only upright for a while may StandBy come back - not a phone still on its
+        // side, nudged or woken by the power key.
+        if (heldOff) {
+            if (!StandbyDetector.isPortrait(e.values[0], e.values[1])) uprightSince = 0L
+            else if (uprightSince == 0L) uprightSince = now
+            else if (now - uprightSince > UPRIGHT_MS) {
+                release()
+                trace("upright again, StandBy may come back")
+            }
         }
-        Debug.publish("state=$s ${(detector.progress * 100).toInt()}% landscape=${detector.landscape} " +
+        // Live readings only while the app's screen shows them: this runs all night on a charger.
+        if (Debug.listener != null) Debug.publish("state=$s ${(detector.progress * 100).toInt()}% landscape=${detector.landscape} " +
             "still=${detector.still}\nx=%.1f y=%.1f z=%.1f".format(e.values[0], e.values[1], e.values[2]))
         onState(s)
     }
@@ -132,8 +138,19 @@ class StandbyService : Service(), SensorEventListener {
         lastState = s
         trace("$was -> $s")
         if (s == StandbyDetector.State.ACTIVE) {
+            // HMC-E can go while this runs, and START_STICKY brings the watcher back without Bridge.watch.
+            if (!Bridge.hmcReady(this)) {
+                trace("HMC-E is gone, the watcher stops")
+                stopSelf()
+                return
+            }
+            if (heldOff) {
+                trace("sent away, StandBy stays away until the phone is upright")
+                return
+            }
             val locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked
-            if (lockedOnly && !locked) {
+            // Like iPhone, StandBy only ever takes over a locked phone.
+            if (!locked) {
                 trace("unlocked, StandBy waits for the lock screen")
                 return
             }
@@ -144,8 +161,7 @@ class StandbyService : Service(), SensorEventListener {
     }
 
     /**
-     * A plain startActivity from a service is dropped without a word on the lock screen (the
-     * overlay anchor is hidden there, so it grants nothing). A full-screen intent is how an
+     * A plain startActivity from a service is dropped without a word on the lock screen. A full-screen intent is how an
      * alarm takes the lock screen, and it is what opens StandBy here; the activity takes the
      * notification down as soon as it is up. The direct start stays for the unlocked case.
      */
@@ -178,27 +194,6 @@ class StandbyService : Service(), SensorEventListener {
         trace("StandBy launched (fsi=${nm.canUseFullScreenIntent()})")
     }
 
-    /**
-     * Android 15 lets an app with the overlay permission start activities from the background
-     * only while one of its overlay windows is visible. A 1px transparent one, while charging.
-     */
-    private fun showAnchor(on: Boolean) {
-        val wm = getSystemService(WindowManager::class.java)
-        if (!on) {
-            anchor?.let { runCatching { wm.removeView(it) } }
-            anchor = null
-            return
-        }
-        if (anchor != null || !android.provider.Settings.canDrawOverlays(this)) return
-        val v = View(this)
-        val lp = WindowManager.LayoutParams(1, 1,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT)
-        runCatching { wm.addView(v, lp); anchor = v }.onFailure { trace("anchor failed: $it") }
-    }
-
     private fun trace(msg: String) {
         Log.i(TAG, msg)
         runCatching {
@@ -210,11 +205,14 @@ class StandbyService : Service(), SensorEventListener {
 
     private fun notification(): Notification {
         val nm = getSystemService(NotificationManager::class.java)
+        // The system lifts this to low for a foreground service; Hooks is what actually hides it.
+        // The old channel goes first; it cannot be lowered once the user's settings have touched it.
+        nm.deleteNotificationChannel("watcher")
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "StandBy watcher",
-            NotificationManager.IMPORTANCE_MIN))
+            NotificationManager.IMPORTANCE_NONE))
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle("StandBy prototype")
+            .setContentTitle("StandBy")
             .setContentText("Watching while charging")
             .setOngoing(true)
             .build()
@@ -222,12 +220,21 @@ class StandbyService : Service(), SensorEventListener {
 
     companion object {
         const val TAG = "HyperImmersive"
-        private const val CHANNEL = "watcher"
+        private const val CHANNEL = "watcher_hidden"
         private const val CHANNEL_SHOW = "standby"
+        const val WATCHER_ID = 1
         const val SHOW_ID = 2
+        private const val UPRIGHT_MS = 1_500L
         @Volatile var running = false
-        /** Like iPhone, StandBy only takes over a locked phone. Off for testing on the desk. */
-        @Volatile var lockedOnly = true
+        /** StandBy was sent away: its emergency way out, the power key, its turn-off delay; see onSensorChanged. */
+        @Volatile var heldOff = false
+
+        /** Kept across a restart of the watcher, which would otherwise bring StandBy straight back. */
+        fun hold(c: Context) {
+            heldOff = true
+            Prefs.setHeldOff(c, true)
+        }
+        private var uprightSince = 0L
     }
 }
 

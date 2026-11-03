@@ -144,6 +144,11 @@ class StandbyDetector(private val dwellMs: Long = DWELL_MS) {
          * (within ~32° of on its side); staying, with [active], 0.6 - so the edge does not
          * flicker. z - the lean - is not looked at.
          */
+        fun isPortrait(x: Float, y: Float): Boolean {
+            val plane = kotlin.math.sqrt(x * x + y * y)
+            return plane >= MIN_PLANE && abs(y) / plane >= 0.85f
+        }
+
         fun isLandscape(x: Float, y: Float, active: Boolean): Boolean {
             val plane = kotlin.math.sqrt(x * x + y * y)
             if (plane < MIN_PLANE) return false

@@ -5,28 +5,41 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The Wi-Fi strength StandBy shows in its status corner. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- Lets the prototype's service open StandBy from the background. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Today's events on the 4x2 calendar widget. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <!-- The watcher comes back after a reboot; there is no launcher icon to start it from. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- HyperOS's own media icons are read from SystemUI's resources. -->
+    <!-- HyperOS's own media icons are read from SystemUI's resources. HI only runs beside HMC-E. -->
     <queries>
         <package android:name="com.android.systemui" />
+        <package android:name="com.yzc26623.HyperMusicCoverEnhanced" />
     </queries>
 
     <application
         android:label="HyperImmersive"
-        android:icon="@android:drawable/ic_lock_idle_charging"
+        android:icon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
+        <!-- HyperMusicCover-Enhanced's Extensions page; callers are checked in Bridge. -->
+        <provider
+            android:name=".Bridge"
+            android:authorities="com.yzc26623.HyperImmersive.bridge"
+            android:exported="true" />
+
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="false">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
-        </activity>
+        </receiver>
 
         <activity
             android:name=".StandbyActivity"

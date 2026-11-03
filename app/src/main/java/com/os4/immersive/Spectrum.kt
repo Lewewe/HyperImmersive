@@ -27,6 +27,8 @@ object Spectrum {
     private const val STALE_MS = 1_500L
 
     val levels = FloatArray(5)
+    /** The beat in the low levels, for the kaomoji widgets. */
+    val beat = KaomojiBeat()
     private val target = FloatArray(5)
     @Volatile private var lastFrameAt = 0L
     private var lastStep = 0L
@@ -57,8 +59,37 @@ object Spectrum {
                 if (bmp != null) main.post { HmcBackdrop.set(key, bmp) }
                 return true
             }
+            if (code == FIRST_CALL_TRANSACTION + 2) {
+                // The lyric HMC-E settled for this track and how its settings draw it - see
+                // HMC-E's ExtensionSpectrum for the layout.
+                data.readInt()
+                val pkg = data.readString().orEmpty()
+                val title = data.readString().orEmpty()
+                val sizeSp = data.readFloat()
+                val weight = data.readInt()
+                val align = data.readInt()
+                val depthBlur = data.readInt()
+                val aliveFx = data.readInt()
+                val n = data.readInt()
+                val lines = ArrayList<HmcLyrics.Line>(n.coerceIn(0, 2000))
+                repeat(n) {
+                    val text = data.readString().orEmpty()
+                    val start = data.readInt()
+                    val end = data.readInt()
+                    val opposite = data.readInt() != 0
+                    lines += HmcLyrics.Line(text, start, end, opposite,
+                        data.createIntArray(), data.createIntArray(), data.createIntArray(),
+                        data.readString(), data.readString())
+                }
+                // Gentle lyric flow comes after the lines; an HMC-E from before it sends none.
+                val groups = data.dataAvail() >= 4 && data.readInt() != 0
+                val look = HmcLyrics.Look(sizeSp, weight, align, depthBlur, aliveFx, groups)
+                main.post { HmcLyrics.set(lines, look, pkg, title) }
+                return true
+            }
             if (code != FIRST_CALL_TRANSACTION) return super.onTransact(code, data, reply, flags)
             for (i in 0 until 5) target[i] = data.readFloat().coerceIn(0f, 1f)
+            beat.feed((target[0] + target[1]) / 2f, SystemClock.uptimeMillis())
             if (data.dataAvail() >= 12) {
                 top = data.readInt()
                 bottom = data.readInt()
@@ -89,6 +120,7 @@ object Spectrum {
         context = null
         lastFrameAt = 0L
         connected = false
+        HmcLyrics.clear()
         levels.fill(0f)
         target.fill(0f)
     }
@@ -121,5 +153,45 @@ object Spectrum {
             val t = if (live) target[b] else 0f
             levels[b] += (t - levels[b]) * if (t > levels[b]) attack else release
         }
+    }
+}
+
+/**
+ * HMC-E's beat for its kaomoji (BpmEstimator.sample and showsBeat, its thresholds, with no tempo
+ * known), on the low levels instead of raw FFT bands: a rise at least [PEAK_SHARE] of the recent
+ * hits and well above the usual, [GAP_MS] apart; one turns the face only every [FLIP_MS].
+ */
+class KaomojiBeat {
+    @Volatile var at = 0L
+        private set
+    @Volatile var direction = 1
+        private set
+    private var previous = 0f
+    private var baseline = 0f
+    private var peak = 0f
+    private var peakAt = 0L
+    private var flippedAt = 0L
+
+    fun feed(low: Float, now: Long) {
+        val flux = if (previous <= 0f) 0f else maxOf(0f, low - previous) / (previous + FLOOR)
+        previous = low
+        baseline = baseline * 0.97f + flux * 0.03f
+        peak = maxOf(flux, peak * kotlin.math.exp(-(now - peakAt) / PEAK_FADE_MS))
+        peakAt = now
+        if (flux > maxOf(0.002f, baseline * 1.8f) && flux >= peak * PEAK_SHARE && now - at >= GAP_MS) {
+            at = now
+            if (now - flippedAt >= FLIP_MS) {
+                direction = -direction
+                flippedAt = now
+            }
+        }
+    }
+
+    private companion object {
+        const val FLOOR = 0.016f
+        const val PEAK_FADE_MS = 2000f
+        const val PEAK_SHARE = 0.5f
+        const val GAP_MS = 250L
+        const val FLIP_MS = 400L
     }
 }

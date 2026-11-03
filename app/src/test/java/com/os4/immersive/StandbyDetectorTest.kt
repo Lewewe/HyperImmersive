@@ -1,6 +1,8 @@
 package com.os4.immersive
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StandbyDetectorTest {
@@ -67,5 +69,13 @@ class StandbyDetectorTest {
         assertEquals(StandbyDetector.State.IDLE, d.hold(6_750, 7_700, true, 0f, g, 0f))
         d.hold(8_000, 14_000, true, g, 0f, 0f)
         assertEquals(StandbyDetector.State.IDLE, d.hold(14_050, 14_100, false, g, 0f, 0f))
+    }
+
+    @Test
+    fun portraitMeansAnEndDownNotASideOrFlat() {
+        assertTrue(StandbyDetector.isPortrait(0.5f, 9.5f))
+        assertTrue(StandbyDetector.isPortrait(0.5f, -9.5f))
+        assertFalse(StandbyDetector.isPortrait(8.2f, 0.05f))
+        assertFalse(StandbyDetector.isPortrait(0.2f, 0.3f))
     }
 }

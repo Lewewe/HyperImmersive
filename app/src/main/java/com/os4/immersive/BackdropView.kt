@@ -84,6 +84,7 @@ class BackdropView(context: Context) : View(context) {
      * not take the art away either, unless it lasts.
      */
     private fun update() {
+        if (burnIn > 0f && current != null) return
         // HMC-E's backdrop when it has sent one, the cover blurred here otherwise.
         val hmc = HmcBackdrop.bitmap
         val useHmc = hmc != null
@@ -127,6 +128,20 @@ class BackdropView(context: Context) : View(context) {
         }
     }
 
+    /**
+     * 0..1 of the idle burn-in dimming: the picture taken down by up to [BURN_IN_DIM]. While it
+     * is on, the picture stays as it is - a new track's crossfade at the idle rate is a flicker
+     * - and catches up once a touch has lit it back up.
+     */
+    var burnIn = 0f
+        set(v) {
+            if (field == v) return
+            val held = field > 0f
+            field = v
+            if (held && v == 0f) update()
+            invalidate()
+        }
+
     override fun onDraw(c: Canvas) {
         c.drawColor(Color.BLACK)
         val pageW = height.toFloat()
@@ -148,6 +163,7 @@ class BackdropView(context: Context) : View(context) {
             dim.alpha = (DIM_ALPHA * maxOf(outAlpha, curAlpha)).toInt()
             c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dim)
         }
+        if (burnIn > 0f) c.drawColor(Color.argb((255 * BURN_IN_DIM * burnIn).toInt(), 0, 0, 0))
     }
 
     /** Centre-cropped to the page, like a cover over a landscape screen. */
@@ -164,6 +180,7 @@ class BackdropView(context: Context) : View(context) {
     companion object {
         private const val BLUR_DP = 60f
         private const val DIM_ALPHA = 90
+        private const val BURN_IN_DIM = 0.8f
         private const val HIDE_DELAY_MS = 1500L
     }
 }

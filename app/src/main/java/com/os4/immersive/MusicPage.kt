@@ -64,7 +64,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     private var playIconFor: Boolean? = null
 
     private fun start(d: android.graphics.drawable.Drawable?) {
-        (d as? android.graphics.drawable.Animatable)?.let { it.stop(); it.start() }
+        // Idle, it is put up as it ends: its morph runs on the render thread at the full rate.
+        (d as? android.graphics.drawable.Animatable)?.let { it.stop(); it.start(); if (idle) it.stop() }
     }
 
     private fun playIconFor(running: Boolean): android.graphics.drawable.Drawable? {
@@ -90,12 +91,17 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     private val rect = RectF()
     private val icon = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val iconPath = android.graphics.Path()
-    /** Temporary transport buttons, in page coordinates as last drawn: prev, play/pause, next. */
-    private val buttons = Array(3) { RectF() }
+    /** Buttons in page coordinates as last drawn: prev, play/pause, next, lyrics. */
+    private val buttons = Array(4) { RectF() }
     private var pressed = -1
     private val m = Matrix()
 
-    private class Cover(var bitmap: Bitmap, val key: String, val title: String, val artist: String)
+    private class Cover(var bitmap: Bitmap, val key: String, val title: String, val artist: String) {
+        /** Worked out once per picture, not per frame: its shader and its shadow's colour. */
+        var shader: BitmapShader? = null
+        var tint = Color.BLACK
+        var madeFor: Bitmap? = null
+    }
 
     private var current: Cover? = null
     private var outgoing: Cover? = null
@@ -110,6 +116,17 @@ class MusicPage(private val context: android.content.Context, private val dens: 
 
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     private val clear = Runnable { if (!MediaArt.shown && current != null) changeTo(null) }
+
+    /** When the track last changed; see [looksRunning]. */
+    private var trackChangedAt = 0L
+    private val resync = Runnable { sync() }
+
+    /**
+     * Playing, as the page shows it: a player can report a pause for a moment as it starts the
+     * next track (YouTube Music does), and the cover shrank and grew back on every change.
+     */
+    private fun looksRunning() = MediaArt.running ||
+        android.os.SystemClock.uptimeMillis() - trackChangedAt < TRACK_SETTLE_MS
 
     fun sync() {
         val art = MediaArt.art
@@ -127,14 +144,19 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         if (!MediaArt.shown || art == null) {
             Unit
         } else if (cur == null || cur.key != key) {
+            if (cur != null) trackChangedAt = android.os.SystemClock.uptimeMillis()
             changeTo(Cover(art, key, MediaArt.title, MediaArt.artist))
         } else {
             cur.bitmap = art
         }
-        val target = if (MediaArt.running) 1f else PAUSED_SCALE
+        // A pause still within the settle time is looked at again once it is over.
+        main.removeCallbacks(resync)
+        if (!MediaArt.running && looksRunning()) main.postDelayed(resync, TRACK_SETTLE_MS)
+        val target = if (looksRunning()) 1f else PAUSED_SCALE
         if (target != playTarget) {
             playTarget = target
             playAnim?.cancel()
+            if (idle) { playScale = target; invalidate(); return }
             playAnim = ValueAnimator.ofFloat(playScale, target).apply {
                 duration = 560
                 interpolator = PathInterpolator(0.34f, 1.3f, 0.64f, 1f)
@@ -220,7 +242,22 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         return flipMatrix
     }
 
+    /**
+     * StandBy is idle at its slowest refresh: a change is shown as it ends, not animated - a
+     * flip or glide drawn once a second only shows its first frame for a while.
+     */
+    var idle = false
+        set(v) { field = v; flow.idle = v }
+
     private fun changeTo(next: Cover?) {
+        if (idle) {
+            swapAnim?.cancel()
+            swap = 1f
+            outgoing = null
+            current = next
+            invalidate()
+            return
+        }
         val prev = current
         if (prev != null && next != null) {
             val recent = android.os.SystemClock.uptimeMillis() - MediaArt.lastSkipAt < 3000
@@ -248,6 +285,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
      */
     fun draw(c: Canvas, w: Float, h: Float, enter: Float) {
         if (enter <= 0f) return
+        stepLyrics()
         val side = h * 0.70f
         // The same gap to the left edge as above and below the cover.
         val cx = (h - side) / 2f + side / 2f
@@ -257,37 +295,47 @@ class MusicPage(private val context: android.content.Context, private val dens: 
 
         stepFlip()
         val out = outgoing
-        val flipping = flipFrom != null || flipAngle % 360f != 0f
-        val fm = flipMatrix(cx, cy)
-        if (fm != null) { c.save(); c.concat(fm) }
-        if (flipping && current != null) {
-            // The flip carries the change: one cover, whichever face is up, no crossfade.
-            val face = flipFrom ?: current!!
-            cover(c, face.bitmap, cx, cy, side, radius, base, enter)
-        } else if (out != null) {
-            // The old cover gives way: down to SWAP_TO and out over the first two thirds.
-            val t = (swap / 0.66f).coerceIn(0f, 1f)
-            cover(c, out.bitmap, cx, cy, side, radius, base * (1f - (1f - SWAP_TO) * t),
-                enter * (1f - t))
-        }
         val cur = current
         val inT = if (out == null) swap else ((swap - 0.15f) / 0.85f).coerceIn(0f, 1f)
-        if (flipping && cur != null) {
-            Unit
-        } else if (cur != null) {
-            cover(c, cur.bitmap, cx, cy, side, radius, base * (SWAP_FROM + (1f - SWAP_FROM) * inT),
-                enter * inT)
-        } else {
-            val s = base * (SWAP_FROM + (1f - SWAP_FROM) * inT)
-            rect.set(cx - side * s / 2, cy - side * s / 2, cx + side * s / 2, cy + side * s / 2)
-            placeholder.color = Color.argb((60 * enter * inT).toInt(), 255, 255, 255)
-            c.drawRoundRect(rect, radius * s, radius * s, placeholder)
+        // The cover gives way to the lyric, and back.
+        layer(c, coverNode, w, h, cx, cy, 1f - lyricsT) { cc ->
+            val flipping = flipFrom != null || flipAngle % 360f != 0f
+            val fm = flipMatrix(cx, cy)
+            if (fm != null) { cc.save(); cc.concat(fm) }
+            if (flipping && current != null) {
+                // The flip carries the change: one cover, whichever face is up, no crossfade.
+                val face = flipFrom ?: current!!
+                cover(cc, face, cx, cy, side, radius, base, enter)
+            } else if (out != null) {
+                // The old cover gives way: down to SWAP_TO and out over the first two thirds.
+                val t = (swap / 0.66f).coerceIn(0f, 1f)
+                cover(cc, out, cx, cy, side, radius, base * (1f - (1f - SWAP_TO) * t),
+                    enter * (1f - t))
+            }
+            if (flipping && cur != null) {
+                Unit
+            } else if (cur != null) {
+                cover(cc, cur, cx, cy, side, radius, base * (SWAP_FROM + (1f - SWAP_FROM) * inT),
+                    enter * inT)
+            } else {
+                val s = base * (SWAP_FROM + (1f - SWAP_FROM) * inT)
+                rect.set(cx - side * s / 2, cy - side * s / 2, cx + side * s / 2, cy + side * s / 2)
+                placeholder.color = Color.argb((60 * enter * inT).toInt(), 255, 255, 255)
+                cc.drawRoundRect(rect, radius * s, radius * s, placeholder)
+            }
+            if (fm != null) cc.restore()
         }
-        if (fm != null) c.restore()
 
         // Title and artist beside the cover; they follow the cover's swap, sliding up a little.
         val textLeft = cx + side / 2f + h * 0.08f
         val textW = w - textLeft - h * 0.08f
+        // Clear of the front camera, which sits on this short edge of the turned page.
+        val lyricsLeft = max(h * 0.08f, cameraDepth + 12f * dens)
+        val lyricsRight = textLeft - h * 0.06f
+        layer(c, lyricsNode, w, h, (lyricsLeft + lyricsRight) / 2f, h / 2f, lyricsT) { lc ->
+            if (flow.draw(lc, lyricsLeft, 0f, lyricsRight, h, enter)) invalidate()
+        }
+        drawLyricsButton(c, textLeft, h, enter)
         // The old title slides up as it fades, from where it stood - not from one step above it.
         val outT = (swap / 0.5f).coerceIn(0f, 1f)
         drawText(c, out, textLeft, textW, h, enter * (1f - outT), -outT)
@@ -352,6 +400,12 @@ class MusicPage(private val context: android.content.Context, private val dens: 
      * The bar is a 6dp capsule on a #1affffff track, its fill fading up towards a bright,
      * softly glowing head. Kept from before: the bar grows while a finger scrubs it.
      */
+    /** The fraction last drawn, and a glide from [glideFrom] begun at [glideAt]. */
+    private var barF = Float.NaN
+    private var glideFrom = 0f
+    private var glideAt = 0L
+    private val glideEase = android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f)
+
     /** The last known length, held across the moment a new track reports none yet. */
     private var lastDuration = 0L
     private var lastDurationAt = 0L
@@ -373,8 +427,20 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         if (!seekHold.isNaN() && (now > seekHoldUntil || kotlin.math.abs(live - seekHold) < 0.01f)) {
             seekHold = Float.NaN
         }
-        val f = (if (!scrub.isNaN()) scrub else if (!seekHold.isNaN()) seekHold else live)
+        val target = (if (!scrub.isNaN()) scrub else if (!seekHold.isNaN()) seekHold else live)
             .coerceIn(0f, 1f)
+        // A jump the bar did not move itself (the previous track, a new song starting over)
+        // glides there instead of snapping, as HyperOS's bar runs back to 0; a finger's never.
+        if (!idle && scrub.isNaN() && !barF.isNaN() && kotlin.math.abs(target - barF) > GLIDE_JUMP &&
+            now - glideAt >= GLIDE_MS) {
+            glideFrom = barF
+            glideAt = now
+        }
+        val g = ((now - glideAt) / GLIDE_MS.toFloat()).coerceIn(0f, 1f)
+        val f = if (scrub.isNaN() && g < 1f) {
+            glideFrom + (target - glideFrom) * glideEase.getInterpolation(g)
+        } else target
+        barF = f
 
         val thick = dens * (6f + 6f * grip)
         val r = thick / 2f
@@ -497,11 +563,11 @@ class MusicPage(private val context: android.content.Context, private val dens: 
             c.scale(k, k, cx, y)
             val d = when (i) {
                 0 -> prevIcon
-                1 -> playIconFor(MediaArt.running)
+                1 -> playIconFor(looksRunning())
                 else -> nextIcon
             }
             if (d != null) {
-                val half = size * (if (i == 1) 0.75f else 0.6f)
+                val half = size * 0.6f
                 d.setBounds((cx - half).toInt(), (y - half).toInt(), (cx + half).toInt(), (y + half).toInt())
                 d.alpha = (255 * enter).toInt()
                 d.draw(c)
@@ -541,6 +607,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         if (!fire) return
         if (i == 0) start(prevIcon) else if (i == 2) start(nextIcon)
         when (i) {
+            3 -> toggleLyrics()
             0 -> MediaArt.previous()
             1 -> MediaArt.playPause()
             2 -> MediaArt.next()
@@ -553,6 +620,10 @@ class MusicPage(private val context: android.content.Context, private val dens: 
             "Not Playing" else return
         if (alpha <= 0f || width <= 0f) return
         val dy = rise * h * 0.04f
+        // The lyrics button stands where the title starts; the title makes room for it.
+        val room = lyricsRoom(h)
+        @Suppress("NAME_SHADOWING") val left = left + room
+        @Suppress("NAME_SHADOWING") val width = width - room
         titlePaint.textSize = h * 0.075f
         artistPaint.textSize = h * 0.055f
         titlePaint.alpha = (255 * alpha).toInt()
@@ -616,14 +687,9 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         visPaint.shader = null
     }
 
-    private var tintFor: Bitmap? = null
-    private var tintColor = Color.BLACK
-
-    /** The artwork's mean colour at a third of its brightness, worked out once per picture. */
-    private fun shadowTint(b: Bitmap): Int {
-        if (b === tintFor) return tintColor
-        tintFor = b
-        tintColor = runCatching {
+    /** The artwork's mean colour at a third of its brightness. */
+    private fun shadowTint(b: Bitmap): Int =
+        runCatching {
             val one = Bitmap.createScaledBitmap(b, 1, 1, true)
             val px = one.getPixel(0, 0)
             if (one !== b) one.recycle()
@@ -633,12 +699,16 @@ class MusicPage(private val context: android.content.Context, private val dens: 
             hsv[2] = hsv[2] * 0.35f
             Color.HSVToColor(hsv)
         }.getOrDefault(Color.BLACK)
-        return tintColor
-    }
 
-    private fun cover(c: Canvas, b: Bitmap, cx: Float, cy: Float, side: Float, radius: Float,
+    private fun cover(c: Canvas, cv: Cover, cx: Float, cy: Float, side: Float, radius: Float,
                       scale: Float, alpha: Float) {
         if (alpha <= 0f) return
+        val b = cv.bitmap
+        if (cv.madeFor !== b) {
+            cv.madeFor = b
+            cv.shader = BitmapShader(b, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            cv.tint = shadowTint(b)
+        }
         val s = side * scale
         rect.set(cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2)
         // The shadow sinks with the cover: deeper when it stands forward, playing.
@@ -647,7 +717,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         // own edge, its black showed through the artwork's anti-aliased rim as a dark outline.
         // The shadow takes the artwork's own colour, deepened, so it sits in the backdrop
         // (which is made of the same colours) instead of as a grey halo on it.
-        val tint = shadowTint(b)
+        val tint = cv.tint
         shadow.color = Color.argb((255 * alpha).toInt(), 0, 0, 0)
         // Centred, not dropped: an even glow of shade on every side, only a hint lower.
         shadow.setShadowLayer(dens * (24f + 12f * depth), 0f, dens * (1.5f + 1.5f * depth),
@@ -656,7 +726,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         c.drawRoundRect(rect.left + inset, rect.top + inset, rect.right - inset,
             rect.bottom - inset, radius * scale, radius * scale, shadow)
 
-        val shader = BitmapShader(b, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        val shader = cv.shader!!
         val k = max(s / b.width, s / b.height)
         m.reset()
         m.postScale(k, k)
@@ -675,6 +745,114 @@ class MusicPage(private val context: android.content.Context, private val dens: 
      * 0.11h button size below its centre at 0.78h - the HyperOS icon's drawn part, not its
      * padded bounds), measured on the device. Its middle goes on the cover's, h / 2.
      */
+    // ------------------------------------------------------------------ lyrics
+
+    /**
+     * HMC-E's lyrics button, by the title: it grows out of its own centre, blurred and faded in
+     * (0.6 to full size, 260ms) when the track has a lyric, and goes the same way (200ms) when
+     * it has none - LyricsButton's look. Tapped, the lyric takes the cover's place.
+     */
+    private val lyricsIcon = LyricsIcon()
+    private val lyricsPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+    private var lyricsBtn = 0f
+    private var lyricsWanted = false
+    private var lyricsBtnAnim: ValueAnimator? = null
+    /** 0 the cover, 1 the lyric. */
+    private var lyricsT = 0f
+    private var lyricsOn = false
+    private var lyricsAnim: ValueAnimator? = null
+    private var lyricsBlur = 0f
+    private var lyricsBlurFilter: android.graphics.BlurMaskFilter? = null
+
+    private fun stepLyrics() {
+        val has = HmcLyrics.matches(MediaArt.key.substringBefore('|'), MediaArt.title)
+        if (has != lyricsWanted) {
+            lyricsWanted = has
+            lyricsBtnAnim?.cancel()
+            lyricsBtnAnim = ValueAnimator.ofFloat(lyricsBtn, if (has) 1f else 0f).apply {
+                duration = if (has) 260L else 200L
+                interpolator = android.view.animation.DecelerateInterpolator()
+                addUpdateListener { lyricsBtn = it.animatedValue as Float; invalidate() }
+                start()
+            }
+            if (!has && lyricsOn) toggleLyrics()
+        }
+    }
+
+    private fun toggleLyrics() {
+        if (!lyricsOn && !lyricsWanted) return
+        lyricsOn = !lyricsOn
+        lyricsAnim?.cancel()
+        lyricsAnim = ValueAnimator.ofFloat(lyricsT, if (lyricsOn) 1f else 0f).apply {
+            duration = 380L
+            interpolator = PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
+            addUpdateListener { lyricsT = it.animatedValue as Float; invalidate() }
+            start()
+        }
+    }
+
+    private fun lyricsSide(h: Float) = h * 0.085f
+
+    /** How far the display cutout reaches in from its edge, in px. */
+    private val cameraDepth by lazy {
+        val cut = runCatching { context.display?.cutout }.getOrNull()
+        val d = if (cut == null) 0 else maxOf(cut.safeInsetTop, cut.safeInsetBottom, cut.safeInsetLeft, cut.safeInsetRight)
+        d.toFloat()
+    }
+
+    /** How far the title moves right for the button. */
+    private fun lyricsRoom(h: Float) = lyricsSide(h) * 1.6f * lyricsBtn
+
+    private fun drawLyricsButton(c: Canvas, left: Float, h: Float, alpha: Float) {
+        val side = lyricsSide(h)
+        val cx = left + side / 2f
+        // Centred on the title and artist together, as HMC-E's sits beside its card's.
+        val top = h * 0.38f + columnShift(h) - h * 0.075f * 0.84f
+        val bottom = h * 0.38f + columnShift(h) + h * 0.055f * 1.4f + h * 0.055f * 0.2f
+        val cy = (top + bottom) / 2f
+        if (lyricsBtn <= 0f || alpha <= 0f) { buttons[3].setEmpty(); return }
+        buttons[3].set(cx - side * 0.8f, cy - side * 0.8f, cx + side * 0.8f, cy + side * 0.8f)
+        val look = lyricsBtn
+        val k = (APPEAR_SCALE + (1f - APPEAR_SCALE) * look) * (if (pressed == 3) 0.85f else 1f)
+        val blur = (1f - look) * 8f * dens
+        if (blur != lyricsBlur) {
+            lyricsBlur = blur
+            lyricsBlurFilter = if (blur < 0.5f) null
+                else android.graphics.BlurMaskFilter(blur, android.graphics.BlurMaskFilter.Blur.NORMAL)
+        }
+        lyricsPaint.maskFilter = lyricsBlurFilter
+        lyricsPaint.alpha = (255 * look * alpha).toInt()
+        lyricsIcon.draw(c, cx, cy, side * k, lyricsOn, lyricsPaint)
+    }
+
+    private val flow = LyricsFlow(dens)
+    private val coverNode = android.graphics.RenderNode("cover")
+    private val lyricsNode = android.graphics.RenderNode("lyrics")
+
+    /**
+     * One side of the cover/lyric switch, recorded so it can scale, fade and blur as one: the
+     * side leaving shrinks toward [GONE_SCALE], fading and blurring; the one coming grows back
+     * from there the same way - LyricsButton's look, larger.
+     */
+    private fun layer(c: Canvas, node: android.graphics.RenderNode, w: Float, h: Float,
+                      px: Float, py: Float, shown: Float, body: (Canvas) -> Unit) {
+        if (shown <= 0f) return
+        if (shown >= 1f || !c.isHardwareAccelerated) { body(c); return }
+        node.setPosition(0, 0, w.toInt(), h.toInt())
+        val rc = node.beginRecording()
+        try { body(rc) } finally { node.endRecording() }
+        val k = GONE_SCALE + (1f - GONE_SCALE) * shown
+        node.pivotX = px
+        node.pivotY = py
+        node.scaleX = k
+        node.scaleY = k
+        node.alpha = shown
+        val blur = (1f - shown) * SWITCH_BLUR_DP * dens
+        node.setRenderEffect(if (blur < 0.5f) null
+            else android.graphics.RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL))
+        c.drawRenderNode(node)
+    }
+
     private fun columnShift(h: Float): Float {
         val top = h * 0.38f - h * 0.075f * 0.84f
         val bottom = h * 0.78f + h * 0.11f * 0.4f
@@ -683,6 +861,11 @@ class MusicPage(private val context: android.content.Context, private val dens: 
 
     companion object {
         const val PAUSED_SCALE = 0.84f
+        /** The lyrics button's size as it starts to grow in. */
+        const val APPEAR_SCALE = 0.6f
+        /** The cover and the lyric switch places through this size, faded and blurred. */
+        const val GONE_SCALE = 0.6f
+        const val SWITCH_BLUR_DP = 24f
         const val SWAP_FROM = 0.9f
         const val SWAP_TO = 0.86f
         const val FLIP_DAMPING = 0.72f
@@ -694,6 +877,10 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         const val BAR_GAIN = 1.45f
         /** The head's glow against SystemUI's, after [BAR_GAIN]. */
         const val GLOW = 0.5f
+        /** A jump in the bar's fraction bigger than this glides, over [GLIDE_MS]. */
+        const val GLIDE_JUMP = 0.02f
+        const val GLIDE_MS = 450L
+        const val TRACK_SETTLE_MS = 2_000L
         /** Previous/next from the middle, as a share of the bar's width. */
         const val SKIP_SPREAD = 0.36f
     }
