@@ -72,9 +72,9 @@ class WidgetMenu(context: Context, box: RectF, pageW: Int, pageH: Int,
             clipToOutline = true
             elevation = 12 * dens
             isClickable = true
-            addView(row(Icon.CHANGE, "Change Widget", Color.WHITE) { close(); onChange() },
+            addView(row(Icon.CHANGE, context.getString(R.string.widget_change), Color.WHITE) { close(); onChange() },
                 LinearLayout.LayoutParams(w, rowH))
-            addView(row(Icon.REMOVE, "Remove Widget", Color.rgb(255, 69, 58)) { close(); onRemove() },
+            addView(row(Icon.REMOVE, context.getString(R.string.widget_remove), Color.rgb(255, 69, 58)) { close(); onRemove() },
                 LinearLayout.LayoutParams(w, rowH))
         }
         addView(card, LayoutParams(w, h).apply {

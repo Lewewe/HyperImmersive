@@ -180,13 +180,13 @@ class StandbyService : Service(), SensorEventListener {
             .putExtra(StandbyActivity.EXTRA_SIDE, if (lastX >= 0f) 1 else -1)
         runCatching { startActivity(intent) }.onFailure { trace("direct start failed: $it") }
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CHANNEL_SHOW, "StandBy",
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_SHOW, getString(R.string.standby),
             NotificationManager.IMPORTANCE_HIGH).apply { setSound(null, null) })
         val pi = android.app.PendingIntent.getActivity(this, 0, intent,
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
         nm.notify(SHOW_ID, Notification.Builder(this, CHANNEL_SHOW)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle("StandBy")
+            .setContentTitle(getString(R.string.standby))
             .setCategory(Notification.CATEGORY_ALARM)
             .setFullScreenIntent(pi, true)
             .setTimeoutAfter(10_000)
@@ -208,12 +208,12 @@ class StandbyService : Service(), SensorEventListener {
         // The system lifts this to low for a foreground service; Hooks is what actually hides it.
         // The old channel goes first; it cannot be lowered once the user's settings have touched it.
         nm.deleteNotificationChannel("watcher")
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "StandBy watcher",
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, getString(R.string.standby_watcher),
             NotificationManager.IMPORTANCE_NONE))
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
-            .setContentTitle("StandBy")
-            .setContentText("Watching while charging")
+            .setContentTitle(getString(R.string.standby))
+            .setContentText(getString(R.string.standby_watching))
             .setOngoing(true)
             .build()
     }

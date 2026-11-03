@@ -24,7 +24,7 @@ private fun strokePaint() = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     strokeCap = Paint.Cap.ROUND
 }
 
-class StatusCluster(private val dens: Float, private val wake: (Long) -> Unit,
+class StatusCluster(private val dens: Float, private val res: android.content.res.Resources, private val wake: (Long) -> Unit,
                     private val redraw: () -> Unit) {
     private val stroke = strokePaint()
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -103,7 +103,7 @@ class StatusCluster(private val dens: Float, private val wake: (Long) -> Unit,
         taps = if (now - tapAt < TAP_WINDOW_MS) taps + 1 else 1
         tapAt = now
         val left = EXIT_TAPS - taps
-        hintText = if (left == 1) "Tap 1 more time to exit" else "Tap $left more times to exit"
+        hintText = res.getQuantityString(R.plurals.standby_exit_hint, left, left)
         wake(TAP_WINDOW_MS)
         redraw()
         return left <= 0

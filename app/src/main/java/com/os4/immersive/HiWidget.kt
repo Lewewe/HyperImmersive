@@ -204,7 +204,7 @@ class HiWidget(context: Context, val kind: Int, private val live: Boolean = true
         city?.let {
             text.textSize = radius * 0.11f
             text.color = ink(170)
-            c.drawText(it.short, cx, cy + radius * 0.42f, text)
+            c.drawText(it.short(context), cx, cy + radius * 0.42f, text)
         }
         hand(c, cx, cy, hr * 30f, radius * 0.5f, radius * 0.06f, ink())
         hand(c, cx, cy, min * 6f, radius * 0.8f, radius * 0.045f, ink())
@@ -336,7 +336,7 @@ class HiWidget(context: Context, val kind: Int, private val live: Boolean = true
             text.typeface = medium
             text.textSize = side * 0.055f
             text.color = ink(150)
-            c.drawText(it.short, side / 2f, under + side * 0.09f, text)
+            c.drawText(it.short(context), side / 2f, under + side * 0.09f, text)
         }
         if (live && !idle) postInvalidateOnAnimation()
     }
@@ -391,7 +391,7 @@ class HiWidget(context: Context, val kind: Int, private val live: Boolean = true
             if (allowed && list == null) return
             text.color = ink(140)
             text.textSize = h * 0.058f
-            c.drawText(if (allowed) "No events today" else "Calendar access is off", x, top + h * 0.17f, text)
+            c.drawText(context.getString(if (allowed) R.string.calendar_no_events else R.string.calendar_no_access), x, top + h * 0.17f, text)
             return
         }
         val rowH = h * 0.145f
@@ -412,7 +412,7 @@ class HiWidget(context: Context, val kind: Int, private val live: Boolean = true
             text.typeface = Typeface.DEFAULT
             text.color = ink(140)
             text.textSize = h * 0.042f
-            c.drawText(e.start?.format(clock) ?: "All day", tx, y + h * 0.105f, text)
+            c.drawText(e.start?.format(clock) ?: context.getString(R.string.calendar_all_day), tx, y + h * 0.105f, text)
         }
     }
 
@@ -426,7 +426,7 @@ class HiWidget(context: Context, val kind: Int, private val live: Boolean = true
         text.typeface = bold
         text.textSize = h * 0.12f
         text.color = red
-        c.drawText(city?.short ?: (today.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()) +
+        c.drawText(city?.short(context) ?: (today.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()) +
             " " + today.dayOfMonth), w / 2f, h * 0.24f, text)
         text.typeface = heavy
         text.color = if (dark) Color.rgb(255, 214, 160) else Color.BLACK
@@ -437,8 +437,8 @@ class HiWidget(context: Context, val kind: Int, private val live: Boolean = true
         c.drawText(digits, w / 2f, baseline, text)
     }
 
-    /** A widget the picker offers: its app's group, name, line and whether it is 4x2. */
-    class Kind(val id: Int, val group: String, val name: String, val about: String, val wide: Boolean)
+    /** A widget the picker offers: its app's group, name, line (string resources) and whether it is 4x2. */
+    class Kind(val id: Int, val group: Int, val name: Int, val about: Int, val wide: Boolean)
 
     companion object {
         const val ANALOG = -1
@@ -464,13 +464,13 @@ class HiWidget(context: Context, val kind: Int, private val live: Boolean = true
         @Volatile var idle = false
 
         val ALL = listOf(
-            Kind(ANALOG, "Clock", "Clock", "See the time on a dial.", false),
-            Kind(SECONDS, "Clock", "Seconds", "The time, with the seconds going round it.", false),
-            Kind(BIG_CLOCK, "Clock", "Digital", "The time, large.", true),
-            Kind(CALENDAR, "Calendar", "Month", "Track the day of the month.", false),
-            Kind(CALENDAR_WIDE, "Calendar", "Day and month", "Today, beside the whole month.", true),
-            Kind(KAOMOJI, "Kaomoji", "Friend", "A friend who dances to the beat.", false),
-            Kind(KAOMOJI_WIDE, "Kaomoji", "Friend and song", "A friend who dances to what is playing.", true))
+            Kind(ANALOG, R.string.group_clock, R.string.kind_clock, R.string.kind_clock_about, false),
+            Kind(SECONDS, R.string.group_clock, R.string.kind_seconds, R.string.kind_seconds_about, false),
+            Kind(BIG_CLOCK, R.string.group_clock, R.string.kind_digital, R.string.kind_digital_about, true),
+            Kind(CALENDAR, R.string.group_calendar, R.string.kind_month, R.string.kind_month_about, false),
+            Kind(CALENDAR_WIDE, R.string.group_calendar, R.string.kind_day_month, R.string.kind_day_month_about, true),
+            Kind(KAOMOJI, R.string.group_kaomoji, R.string.kind_friend, R.string.kind_friend_about, false),
+            Kind(KAOMOJI_WIDE, R.string.group_kaomoji, R.string.kind_friend_song, R.string.kind_friend_song_about, true))
 
         fun isKnown(kind: Int) = ALL.any { it.id == kind }
 

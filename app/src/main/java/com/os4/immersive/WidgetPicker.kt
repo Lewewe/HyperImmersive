@@ -66,7 +66,7 @@ class WidgetPicker(context: Context, wide: Boolean, replace: Boolean, private va
                 addView(preview, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
                 addView(dots, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(20)))
                 addView(text(17f, Color.WHITE, 600).apply {
-                    text = if (replace) "Replace" else "⊕  Add Widget"
+                    setText(if (replace) R.string.widget_replace else R.string.widget_add)
                     gravity = Gravity.CENTER
                     background = round(Color.rgb(235, 87, 72), 26f)
                     setOnClickListener { variants.getOrNull(index)?.let(onPick); close() }
@@ -119,7 +119,7 @@ class WidgetPicker(context: Context, wide: Boolean, replace: Boolean, private va
             setPadding(dp(12), dp(8), dp(12), dp(8))
             addView(widget(kinds.first { it.group == g }.id, icon = true), LinearLayout.LayoutParams(dp(30), dp(30)))
             addView(text(17f, Color.WHITE, 400).apply {
-                text = g
+                setText(g)
                 setPadding(dp(14), 0, 0, 0)
             })
             setOnClickListener {
@@ -134,8 +134,8 @@ class WidgetPicker(context: Context, wide: Boolean, replace: Boolean, private va
         }
 
         val kind = variants[index]
-        title.text = kind.name
-        about.text = kind.about
+        title.setText(kind.name)
+        about.setText(kind.about)
         val w = preview.width.toFloat()
         for (i in preview.childCount - 1 downTo 0) {
             val old = preview.getChildAt(i)

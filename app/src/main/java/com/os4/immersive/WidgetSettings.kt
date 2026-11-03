@@ -22,26 +22,27 @@ import java.time.ZoneId
 
 /** The cities a clock widget can show; none is the phone's own time. */
 object WidgetCities {
-    class City(val name: String, val zone: ZoneId) {
-        val short get() = name.substringBefore(',')
+    /** [name] is what is saved for a widget, so it stays English; [label] is what is shown. */
+    class City(val name: String, val zone: ZoneId, val label: Int) {
+        fun short(c: Context) = c.getString(label).substringBefore(',').substringBefore('，')
     }
 
     val ALL = listOf(
-        "Hanoi, Vietnam" to "Asia/Ho_Chi_Minh",
-        "Bangkok, Thailand" to "Asia/Bangkok",
-        "Singapore, Singapore" to "Asia/Singapore",
-        "Beijing, China" to "Asia/Shanghai",
-        "Seoul, South Korea" to "Asia/Seoul",
-        "Tokyo, Japan" to "Asia/Tokyo",
-        "Sydney, Australia" to "Australia/Sydney",
-        "Dubai, U.A.E." to "Asia/Dubai",
-        "Moscow, Russia" to "Europe/Moscow",
-        "Berlin, Germany" to "Europe/Berlin",
-        "Paris, France" to "Europe/Paris",
-        "London, U.K." to "Europe/London",
-        "New York, U.S.A." to "America/New_York",
-        "Cupertino, U.S.A." to "America/Los_Angeles",
-    ).map { City(it.first, ZoneId.of(it.second)) }
+        City("Hanoi, Vietnam", ZoneId.of("Asia/Ho_Chi_Minh"), R.string.city_hanoi),
+        City("Bangkok, Thailand", ZoneId.of("Asia/Bangkok"), R.string.city_bangkok),
+        City("Singapore, Singapore", ZoneId.of("Asia/Singapore"), R.string.city_singapore),
+        City("Beijing, China", ZoneId.of("Asia/Shanghai"), R.string.city_beijing),
+        City("Seoul, South Korea", ZoneId.of("Asia/Seoul"), R.string.city_seoul),
+        City("Tokyo, Japan", ZoneId.of("Asia/Tokyo"), R.string.city_tokyo),
+        City("Sydney, Australia", ZoneId.of("Australia/Sydney"), R.string.city_sydney),
+        City("Dubai, U.A.E.", ZoneId.of("Asia/Dubai"), R.string.city_dubai),
+        City("Moscow, Russia", ZoneId.of("Europe/Moscow"), R.string.city_moscow),
+        City("Berlin, Germany", ZoneId.of("Europe/Berlin"), R.string.city_berlin),
+        City("Paris, France", ZoneId.of("Europe/Paris"), R.string.city_paris),
+        City("London, U.K.", ZoneId.of("Europe/London"), R.string.city_london),
+        City("New York, U.S.A.", ZoneId.of("America/New_York"), R.string.city_new_york),
+        City("Cupertino, U.S.A.", ZoneId.of("America/Los_Angeles"), R.string.city_cupertino),
+    )
 
     fun named(name: String?) = ALL.firstOrNull { it.name == name }
 }
@@ -207,15 +208,14 @@ class WidgetSettings(context: Context, kind: HiWidget.Kind, box: RectF, current:
             addView(LinearLayout(context).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 addView(icon, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
-                addView(text(18f, Color.WHITE, 600).apply { text = kind.group })
+                addView(text(18f, Color.WHITE, 600).apply { setText(kind.group) })
             })
             addView(text(13.5f, gray, 400).apply {
-                text = if (HiWidget.hasCity(kind.id)) "Set a city to check the time at that location."
-                    else "Choose how this widget looks."
+                setText(if (HiWidget.hasCity(kind.id)) R.string.widget_city_about else R.string.widget_look_about)
             }, margins(top = 14))
-            if (HiWidget.hasCity(kind.id)) addView(row("City", value) { showList(true) },
+            if (HiWidget.hasCity(kind.id)) addView(row(context.getString(R.string.widget_city), value) { showList(true) },
                 rowParams(top = 16))
-            addView(row("Appearance", look) {
+            addView(row(context.getString(R.string.widget_appearance), look) {
                 isDark = !isDark
                 look.text = lookName(isDark)
                 icon.dark = isDark
@@ -249,7 +249,7 @@ class WidgetSettings(context: Context, kind: HiWidget.Kind, box: RectF, current:
         morph(1f)
     }
 
-    private fun lookName(dark: Boolean) = if (dark) "Dark" else "Light"
+    private fun lookName(dark: Boolean) = context.getString(if (dark) R.string.widget_dark else R.string.widget_light)
 
     /** A row of the card: what it sets, and to what, in a rounded square. */
     private fun row(label: String, shown: TextView, click: () -> Unit) = LinearLayout(context).apply {
@@ -278,11 +278,11 @@ class WidgetSettings(context: Context, kind: HiWidget.Kind, box: RectF, current:
     }
 
     private fun showValue() {
-        value.text = picked?.name ?: LOCAL
+        value.setText(picked?.label ?: R.string.widget_this_phone)
         rows.removeAllViews()
         for (city in listOf<WidgetCities.City?>(null) + WidgetCities.ALL) {
             rows.addView(text(16f, if (city === picked) orange else Color.WHITE, 400).apply {
-                text = city?.name ?: LOCAL
+                setText(city?.label ?: R.string.widget_this_phone)
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(14), 0, dp(14), 0)
                 background = android.graphics.drawable.RippleDrawable(
@@ -334,7 +334,6 @@ class WidgetSettings(context: Context, kind: HiWidget.Kind, box: RectF, current:
     private fun dp(v: Int) = (v * dens).toInt()
 
     private companion object {
-        const val LOCAL = "This phone"
         /** Everything on the card keeps this far from its edge, clear of its big corners. */
         const val EDGE_DP = 32
         const val OPEN_MS = 260L

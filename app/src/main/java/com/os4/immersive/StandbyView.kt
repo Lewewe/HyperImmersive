@@ -51,7 +51,7 @@ class StandbyView(context: Context) : View(context) {
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
     private val bold = Typeface.create(Typeface.DEFAULT, 700, false)
-    private val status = StatusCluster(dens, { wake(it) }, { invalidate() })
+    private val status = StatusCluster(dens, resources, { wake(it) }, { invalidate() })
     private val volume = VolumeBar(dens) { wake(it, user = true) }
 
     fun setStatus(cell: Int, wifi: Int, level: Float, isCharging: Boolean) =
@@ -805,7 +805,7 @@ class StandbyView(context: Context) : View(context) {
             text.typeface = bold
             text.textSize = box.height() * 0.085f
             text.color = Color.argb(200, 255, 255, 255)
-            c.drawText(if (full) "Page limit reached" else "New page", cx,
+            c.drawText(context.getString(if (full) R.string.page_limit else R.string.page_new), cx,
                 box.centerY() + box.height() * 0.3f, text)
             c.restore()
         }

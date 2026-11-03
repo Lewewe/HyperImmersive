@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="standby">StandBy</string>
+    <string name="standby_watcher">StandBy watcher</string>
+    <string name="standby_watching">Watching while charging</string>
+    <plurals name="standby_exit_hint">
+        <item quantity="one">Tap %d more time to exit</item>
+        <item quantity="other">Tap %d more times to exit</item>
+    </plurals>
+    <string name="page_new">New page</string>
+    <string name="page_limit">Page limit reached</string>
+    <string name="music_not_playing">Not Playing</string>
+
+    <string name="widget_change">Change Widget</string>
+    <string name="widget_remove">Remove Widget</string>
+    <string name="widget_add">"⊕  Add Widget"</string>
+    <string name="widget_replace">Replace</string>
+    <string name="widget_city_about">Set a city to check the time at that location.</string>
+    <string name="widget_look_about">Choose how this widget looks.</string>
+    <string name="widget_city">City</string>
+    <string name="widget_appearance">Appearance</string>
+    <string name="widget_dark">Dark</string>
+    <string name="widget_light">Light</string>
+    <string name="widget_this_phone">This phone</string>
+
+    <string name="calendar_no_events">No events today</string>
+    <string name="calendar_no_access">Calendar access is off</string>
+    <string name="calendar_all_day">All day</string>
+
+    <string name="group_clock">Clock</string>
+    <string name="group_calendar">Calendar</string>
+    <string name="group_kaomoji">Kaomoji</string>
+    <string name="kind_clock">Clock</string>
+    <string name="kind_clock_about">See the time on a dial.</string>
+    <string name="kind_seconds">Seconds</string>
+    <string name="kind_seconds_about">The time, with the seconds going round it.</string>
+    <string name="kind_digital">Digital</string>
+    <string name="kind_digital_about">The time, large.</string>
+    <string name="kind_month">Month</string>
+    <string name="kind_month_about">Track the day of the month.</string>
+    <string name="kind_day_month">Day and month</string>
+    <string name="kind_day_month_about">Today, beside the whole month.</string>
+    <string name="kind_friend">Friend</string>
+    <string name="kind_friend_about">A friend who dances to the beat.</string>
+    <string name="kind_friend_song">Friend and song</string>
+    <string name="kind_friend_song_about">A friend who dances to what is playing.</string>
+
+    <string name="city_hanoi">Hanoi, Vietnam</string>
+    <string name="city_bangkok">Bangkok, Thailand</string>
+    <string name="city_singapore">Singapore, Singapore</string>
+    <string name="city_beijing">Beijing, China</string>
+    <string name="city_seoul">Seoul, South Korea</string>
+    <string name="city_tokyo">Tokyo, Japan</string>
+    <string name="city_sydney">Sydney, Australia</string>
+    <string name="city_dubai">Dubai, U.A.E.</string>
+    <string name="city_moscow">Moscow, Russia</string>
+    <string name="city_berlin">Berlin, Germany</string>
+    <string name="city_paris">Paris, France</string>
+    <string name="city_london">London, U.K.</string>
+    <string name="city_new_york">New York, U.S.A.</string>
+    <string name="city_cupertino">Cupertino, U.S.A.</string>
+</resources>

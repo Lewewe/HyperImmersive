@@ -617,7 +617,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     private fun drawText(c: Canvas, cover: Cover?, left: Float, width: Float, h: Float,
                          alpha: Float, rise: Float) {
         val title = cover?.title ?: if (cover == null && current == null && outgoing == null)
-            "Not Playing" else return
+            context.getString(R.string.music_not_playing) else return
         if (alpha <= 0f || width <= 0f) return
         val dy = rise * h * 0.04f
         // The lyrics button stands where the title starts; the title makes room for it.

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="standby">待机显示</string>
+    <string name="standby_watcher">待机显示监听</string>
+    <string name="standby_watching">充电时保持监听</string>
+    <plurals name="standby_exit_hint">
+        <item quantity="other">再点按 %d 次退出</item>
+    </plurals>
+    <string name="page_new">新建页面</string>
+    <string name="page_limit">已达页面上限</string>
+    <string name="music_not_playing">未在播放</string>
+
+    <string name="widget_change">更换小组件</string>
+    <string name="widget_remove">移除小组件</string>
+    <string name="widget_add">"⊕  添加小组件"</string>
+    <string name="widget_replace">替换</string>
+    <string name="widget_city_about">设置城市，查看当地时间。</string>
+    <string name="widget_look_about">选择此小组件的外观。</string>
+    <string name="widget_city">城市</string>
+    <string name="widget_appearance">外观</string>
+    <string name="widget_dark">深色</string>
+    <string name="widget_light">浅色</string>
+    <string name="widget_this_phone">本机</string>
+
+    <string name="calendar_no_events">今天没有日程</string>
+    <string name="calendar_no_access">日历权限未开启</string>
+    <string name="calendar_all_day">全天</string>
+
+    <string name="group_clock">时钟</string>
+    <string name="group_calendar">日历</string>
+    <string name="group_kaomoji">颜文字</string>
+    <string name="kind_clock">时钟</string>
+    <string name="kind_clock_about">在表盘上查看时间。</string>
+    <string name="kind_seconds">秒针</string>
+    <string name="kind_seconds_about">显示时间，秒数环绕走动。</string>
+    <string name="kind_digital">数字</string>
+    <string name="kind_digital_about">大字显示时间。</string>
+    <string name="kind_month">月历</string>
+    <string name="kind_month_about">查看本月的日期。</string>
+    <string name="kind_day_month">日期和月历</string>
+    <string name="kind_day_month_about">今天的日期，以及整个月份。</string>
+    <string name="kind_friend">小伙伴</string>
+    <string name="kind_friend_about">随节拍舞动的小伙伴。</string>
+    <string name="kind_friend_song">小伙伴和歌曲</string>
+    <string name="kind_friend_song_about">随正在播放的歌曲舞动的小伙伴。</string>
+
+    <string name="city_hanoi">河内，越南</string>
+    <string name="city_bangkok">曼谷，泰国</string>
+    <string name="city_singapore">新加坡，新加坡</string>
+    <string name="city_beijing">北京，中国</string>
+    <string name="city_seoul">首尔，韩国</string>
+    <string name="city_tokyo">东京，日本</string>
+    <string name="city_sydney">悉尼，澳大利亚</string>
+    <string name="city_dubai">迪拜，阿联酋</string>
+    <string name="city_moscow">莫斯科，俄罗斯</string>
+    <string name="city_berlin">柏林，德国</string>
+    <string name="city_paris">巴黎，法国</string>
+    <string name="city_london">伦敦，英国</string>
+    <string name="city_new_york">纽约，美国</string>
+    <string name="city_cupertino">库比蒂诺，美国</string>
+</resources>

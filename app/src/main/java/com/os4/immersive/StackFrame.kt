@@ -59,7 +59,7 @@ class StackFrame(context: Context) : FrameLayout(context) {
             val r = childRect(i)
             text.textSize = height * 0.05f
             text.color = Color.argb(a * 200 / 255, 255, 255, 255)
-            val name = HiWidget.ALL.firstOrNull { it.id == (v as? HiWidget)?.kind }?.group ?: ""
+            val name = HiWidget.ALL.firstOrNull { it.id == (v as? HiWidget)?.kind }?.let { context.getString(it.group) } ?: ""
             c.drawText(name, r.centerX(), r.bottom + text.textSize * 1.25f, text)
             val (bx, by, br) = badgeOf(i)
             fill.color = Color.argb(a * 235 / 255, 72, 72, 74)
