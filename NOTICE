@@ -1,0 +1,14 @@
+HyperImmersive
+Copyright (C) 2026 Lewewe
+
+Licensed under the GNU Affero General Public License, version 3. See LICENSE.
+
+HyperImmersive is an extension of HyperMusicCover-Enhanced
+(https://github.com/Lewewe/HyperMusicCover-Enhanced), itself a fork of
+HyperMusicCover by zyl6932 (https://github.com/zyl6932/HyperMusicCover), both
+AGPL-3.0.
+
+Third-party material:
+
+- ic_miuix_back.xml and ic_miuix_settings.xml come from miuix-icons
+  (https://github.com/compose-miuix-ui/miuix), Apache-2.0.
