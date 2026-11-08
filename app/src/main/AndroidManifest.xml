@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Today's events on the 4x2 calendar widget. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <!-- The photo widgets' pictures, from the whole library. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <!-- The watcher comes back after a reboot; there is no launcher icon to start it from. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 

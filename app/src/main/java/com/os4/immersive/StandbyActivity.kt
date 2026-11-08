@@ -324,6 +324,7 @@ class StandbyActivity : Activity() {
                     city = WidgetCities.named(Prefs.city(this@StandbyActivity, key, id))
                     dark = Prefs.dark(this@StandbyActivity, key, id)
                     glass = Prefs.widgetGlass(this@StandbyActivity)
+                    photoChoice = Prefs.photo(this@StandbyActivity, key, id)
                     // Each its own rounded card, so a stack's widgets stay cards as they scroll.
                     outlineProvider = frame.outlineProvider
                     clipToOutline = true
@@ -581,12 +582,20 @@ class StandbyActivity : Activity() {
         if (picker != null) return
         val whole = StandbyView.slotOf(slot) == StandbyView.WIDE
         val p = WidgetPicker(this, whole, replace, onPick = { kind ->
-            if (replace) return@WidgetPicker replaceShown(slot, kind.id)
-            val target = if (whole && !kind.wide) {
+            val target = if (!replace && whole && !kind.wide) {
                 StandbyView.slotKey(StandbyView.pageOf(slot) ?: return@WidgetPicker, 0)
             } else slot
-            place(target, kind.id)
-            view.landWidget(target)
+            val put = {
+                if (replace) replaceShown(slot, kind.id) else {
+                    place(target, kind.id)
+                    view.landWidget(target)
+                }
+            }
+            // A photo widget comes only once its photo is chosen and framed.
+            if (HiWidget.isPhoto(kind.id)) choosePhoto(kind.wide) { id, crop ->
+                Prefs.setPhoto(this, target, kind.id, id, crop)
+                put()
+            } else put()
         }, onClose = {
             root.removeView(picker)
             picker = null
@@ -612,9 +621,15 @@ class StandbyActivity : Activity() {
                 // Into the stack's editor the widget stays up, and the rest blurred.
                 if (managedKey == null && settings == null) view.closeMenu()
             },
-            onSettings = shownKind(key)?.let { kind -> { openSettings(key, kind, box) } },
+            onSettings = shownKind(key)?.takeIf { !HiWidget.isPhoto(it) }?.let { kind -> { openSettings(key, kind, box) } },
             widget = view.hosted[key],
-            widgetDark = shownKind(key)?.let { Prefs.dark(this, key, it) } ?: true)
+            widgetDark = shownKind(key)?.let { Prefs.dark(this, key, it) } ?: true,
+            onNewPhoto = shownKind(key)?.takeIf { HiWidget.isPhoto(it) }?.let { kind -> {
+                choosePhoto(kind == HiWidget.PHOTO_WIDE) { id, crop ->
+                    Prefs.setPhoto(this, key, kind, id, crop)
+                    loadWidgets()
+                }
+            } })
         m.layoutParams = android.widget.FrameLayout.LayoutParams(root.height, root.width)
         menu = m
         root.addView(m)
@@ -674,6 +689,22 @@ class StandbyActivity : Activity() {
         v.translationY = vals[android.graphics.Matrix.MTRANS_Y]
         v.rotation = Math.toDegrees(kotlin.math.atan2(vals[android.graphics.Matrix.MSKEW_Y].toDouble(),
             vals[android.graphics.Matrix.MSCALE_X].toDouble())).toFloat()
+    }
+
+    private var chooser: PhotoChooser? = null
+
+    /** The library to choose a photo from, then its framing; [done] only if one was chosen. */
+    private fun choosePhoto(wide: Boolean, done: (Long, android.graphics.RectF) -> Unit) {
+        if (chooser != null) return
+        val p = PhotoChooser(this, if (wide) WidgetSizes.WIDE_DP / WidgetSizes.SQUARE_DP else 1f, done, onClose = {
+            root.removeView(chooser)
+            chooser = null
+        })
+        // Laid out landscape, the page's own width and height, and turned onto the screen.
+        p.layoutParams = android.widget.FrameLayout.LayoutParams(root.height, root.width)
+        chooser = p
+        root.addView(p)
+        turn(p)
     }
 
     private fun place(slot: String, id: Int) {

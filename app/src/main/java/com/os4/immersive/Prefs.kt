@@ -91,6 +91,18 @@ object Prefs {
     fun setCity(c: Context, slot: String, kind: Int, name: String?) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .edit().putString("city_${slot}_$kind", name).apply()
 
+    /** A photo widget's photo and the part of it shown (fractions of the photo); null until chosen. */
+    fun photo(c: Context, slot: String, kind: Int): Pair<Long, android.graphics.RectF>? = runCatching {
+        val (id, crop) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getString("photo_${slot}_$kind", null)!!.split("|")
+        val r = crop.split(",").map(String::toFloat)
+        id.toLong() to android.graphics.RectF(r[0], r[1], r[2], r[3])
+    }.getOrNull()
+
+    fun setPhoto(c: Context, slot: String, kind: Int, id: Long, crop: android.graphics.RectF) =
+        c.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString("photo_${slot}_$kind", "$id|${crop.left},${crop.top},${crop.right},${crop.bottom}").apply()
+
     /** How solid the widgets' backgrounds are, page editing's slider: 0 clear to 1 solid. */
     fun widgetGlass(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getFloat("widget_glass", 1f)
 

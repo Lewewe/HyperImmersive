@@ -33,10 +33,11 @@ import android.widget.TextView
 class WidgetMenu(context: Context, box: RectF, pageW: Int, pageH: Int,
                  onChange: () -> Unit, onRemove: () -> Unit, onBoxTap: () -> Unit,
                  private val onClose: () -> Unit, onSettings: (() -> Unit)? = null,
-                 widget: android.view.View? = null, widgetDark: Boolean = true) : FrameLayout(context) {
+                 widget: android.view.View? = null, widgetDark: Boolean = true,
+                 onNewPhoto: (() -> Unit)? = null) : FrameLayout(context) {
 
     private val dens = resources.displayMetrics.density
-    private val card = LinearLayout(context)
+    private val card = GlassCard(context)
     private val gear = WidgetSettingsButton(context)
 
     private var downX = 0f
@@ -64,8 +65,9 @@ class WidgetMenu(context: Context, box: RectF, pageW: Int, pageH: Int,
         card.apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, pad, 0, pad)
+            // Only its shape: the card's colour is drawn over its own blur.
             background = GradientDrawable().apply {
-                setColor(Color.argb(214, 36, 36, 38))
+                setColor(Color.TRANSPARENT)
                 cornerRadius = 25 * dens
             }
             outlineProvider = ViewOutlineProvider.BACKGROUND
@@ -81,8 +83,9 @@ class WidgetMenu(context: Context, box: RectF, pageW: Int, pageH: Int,
             leftMargin = x
             topMargin = y
         })
-        // A widget that can be set up has its way there on its corner.
-        if (onSettings != null) gear.apply {
+        // A widget that can be set up has its way there on its corner; a photo, a new one.
+        if (onSettings != null || onNewPhoto != null) gear.apply {
+            turn = onNewPhoto != null
             val lifted = WidgetSettingsButton.lifted(box)
             source = widget
             overDark = widgetDark
@@ -93,8 +96,13 @@ class WidgetMenu(context: Context, box: RectF, pageW: Int, pageH: Int,
             animate().scaleX(1f).scaleY(1f).setDuration(OPEN_MS)
                 .setInterpolator(android.view.animation.OvershootInterpolator(1.2f)).start()
             setOnClickListener {
+                if (onNewPhoto != null) {
+                    close()
+                    onNewPhoto()
+                    return@setOnClickListener
+                }
                 visibility = GONE
-                onSettings()
+                onSettings?.invoke()
             }
         }
         // Grows out of the widget's side.
@@ -133,6 +141,46 @@ class WidgetMenu(context: Context, box: RectF, pageW: Int, pageH: Int,
     }
 
     private fun dp(v: Int) = (v * dens).toInt()
+
+    /**
+     * The card, frosted: the backdrop under it drawn again here, blurred, then tinted. Only the
+     * backdrop - drawing the page again would step its animations twice a frame.
+     */
+    private inner class GlassCard(context: Context) : LinearLayout(context) {
+        private val node = android.graphics.RenderNode("menu-glass")
+        private val toRoot = android.graphics.Matrix()
+        private val toCard = android.graphics.Matrix()
+        private val blur = android.graphics.RenderEffect.createBlurEffect(MENU_BLUR_DP * dens, MENU_BLUR_DP * dens,
+            android.graphics.Shader.TileMode.CLAMP)
+
+        override fun dispatchDraw(c: Canvas) {
+            val root = this@WidgetMenu.parent as? android.view.ViewGroup
+            val backdrop = root?.let { r -> (0 until r.childCount).map(r::getChildAt).firstOrNull { it is BackdropView } }
+            var frosted = false
+            if (backdrop != null && c.isHardwareAccelerated && width > 0) {
+                // This card's corner in the root's coordinates, and back.
+                toRoot.set(matrix)
+                toRoot.postTranslate(left.toFloat(), top.toFloat())
+                toRoot.postConcat(this@WidgetMenu.matrix)
+                toRoot.postTranslate(this@WidgetMenu.left.toFloat(), this@WidgetMenu.top.toFloat())
+                if (toRoot.invert(toCard)) {
+                    node.setPosition(0, 0, width, height)
+                    val rc = node.beginRecording(width, height)
+                    rc.concat(toCard)
+                    rc.translate(backdrop.left.toFloat(), backdrop.top.toFloat())
+                    rc.concat(backdrop.matrix)
+                    backdrop.draw(rc)
+                    node.endRecording()
+                    node.setRenderEffect(blur)
+                    c.drawRenderNode(node)
+                    frosted = true
+                    postInvalidateOnAnimation()
+                }
+            }
+            c.drawColor(if (frosted) GLASS_TINT else SOLID_TINT)
+            super.dispatchDraw(c)
+        }
+    }
 
     private enum class Icon { CHANGE, REMOVE }
 
@@ -184,5 +232,8 @@ class WidgetMenu(context: Context, box: RectF, pageW: Int, pageH: Int,
     private companion object {
         const val OPEN_MS = 280L
         const val CLOSE_MS = 160L
+        const val MENU_BLUR_DP = 30f
+        val GLASS_TINT = Color.argb(150, 36, 36, 38)
+        val SOLID_TINT = Color.argb(214, 36, 36, 38)
     }
 }

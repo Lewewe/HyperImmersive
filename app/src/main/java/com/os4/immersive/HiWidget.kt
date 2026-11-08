@@ -121,7 +121,66 @@ class HiWidget(context: Context, val kind: Int, private val live: Boolean = true
             BIG_CLOCK -> drawBigClock(c, w, h)
             SECONDS -> drawSeconds(c, min(w, h))
             KAOMOJI, KAOMOJI_WIDE -> drawKaomoji(c, w, h)
+            PHOTO, PHOTO_WIDE -> drawPhoto(c, w, h)
         }
+    }
+
+    /** The photo widget's photo and the part of it shown, as [Prefs.photo] has it. */
+    var photoChoice: Pair<Long, RectF>? = null
+        set(v) {
+            field = v
+            photo = null
+            photoFor = null
+            invalidate()
+        }
+    private var photo: android.graphics.Bitmap? = null
+    private var photoFor: Pair<Long, RectF>? = null
+    private var photoMissing = false
+    private val photoDst = RectF()
+    private val photoPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+
+    /** Decoded once for its size, off the main thread. */
+    private fun loadPhoto(choice: Pair<Long, RectF>) {
+        if (photoFor === choice || width == 0) return
+        photoFor = choice
+        val app = context.applicationContext
+        val w = width
+        val h = height
+        Thread {
+            val read = Photos.cropped(app, choice.first, choice.second, w, h)
+            post {
+                if (photoFor !== choice) return@post
+                photo = read
+                photoMissing = read == null
+                invalidate()
+            }
+        }.start()
+    }
+
+    /** The chosen part filling the card; with none chosen (the picker), a sun over a hill. */
+    private fun drawPhoto(c: Canvas, w: Float, h: Float) {
+        val choice = photoChoice
+        if (!live || choice == null) {
+            c.drawColor(Color.rgb(90, 135, 255))
+            fill.color = Color.rgb(255, 214, 10)
+            c.drawCircle(w * 0.7f, h * 0.32f, min(w, h) * 0.13f, fill)
+            fill.color = Color.rgb(52, 199, 89)
+            c.drawOval(-w * 0.2f, h * 0.6f, w * 1.2f, h * 1.6f, fill)
+            return
+        }
+        if (!Photos.allowed(context) || photoMissing) {
+            text.textAlign = Paint.Align.CENTER
+            text.typeface = Typeface.DEFAULT
+            text.color = ink(140)
+            text.textSize = h * 0.07f
+            c.drawText(context.getString(if (photoMissing) R.string.photo_missing else R.string.photo_access_off),
+                w / 2f, h / 2f, text)
+            return
+        }
+        loadPhoto(choice)
+        val p = photo ?: return
+        photoDst.set(0f, 0f, w, h)
+        c.drawBitmap(p, null, photoDst, photoPaint)
     }
 
     private var calm = 1f
@@ -448,6 +507,8 @@ class HiWidget(context: Context, val kind: Int, private val live: Boolean = true
         const val KAOMOJI_WIDE = -5
         const val SECONDS = -6
         const val CALENDAR_WIDE = -7
+        const val PHOTO = -8
+        const val PHOTO_WIDE = -9
         private const val EVENTS_EVERY_MS = 60_000L
         private val CALENDAR_BLUE = Color.rgb(90, 135, 255)
         private val DARK_CARD = Color.rgb(28, 28, 30)
@@ -470,7 +531,12 @@ class HiWidget(context: Context, val kind: Int, private val live: Boolean = true
             Kind(CALENDAR, R.string.group_calendar, R.string.kind_month, R.string.kind_month_about, false),
             Kind(CALENDAR_WIDE, R.string.group_calendar, R.string.kind_day_month, R.string.kind_day_month_about, true),
             Kind(KAOMOJI, R.string.group_kaomoji, R.string.kind_friend, R.string.kind_friend_about, false),
-            Kind(KAOMOJI_WIDE, R.string.group_kaomoji, R.string.kind_friend_song, R.string.kind_friend_song_about, true))
+            Kind(KAOMOJI_WIDE, R.string.group_kaomoji, R.string.kind_friend_song, R.string.kind_friend_song_about, true),
+            Kind(PHOTO, R.string.group_photos, R.string.kind_photo, R.string.kind_photo_about, false),
+            Kind(PHOTO_WIDE, R.string.group_photos, R.string.kind_photo, R.string.kind_photo_about, true))
+
+        /** No light or dark to set: its corner button chooses another photo instead. */
+        fun isPhoto(kind: Int) = kind == PHOTO || kind == PHOTO_WIDE
 
         fun isKnown(kind: Int) = ALL.any { it.id == kind }
 

@@ -50,13 +50,15 @@ object WidgetCities {
 /**
  * The button in a customizable widget's bottom right corner: a rounded square of thin frost over
  * the widget blurred ([source], laid out on [sourceBox]), with MIUIX's settings icon, turning into
- * its back icon once the widget shows its settings ([back], 0 to 1).
+ * its back icon once the widget shows its settings ([back], 0 to 1). With [turn], MIUIX's rotate
+ * icon instead: a photo widget's way to another photo.
  */
 class WidgetSettingsButton(context: Context) : View(context) {
     private val dens = resources.displayMetrics.density
     private val frost = Paint(Paint.ANTI_ALIAS_FLAG)
     private val gear = resources.getDrawable(R.drawable.ic_miuix_settings, null).mutate()
     private val arrow = resources.getDrawable(R.drawable.ic_miuix_back, null).mutate()
+    private val rotateIcon = resources.getDrawable(R.drawable.ic_miuix_rotate, null).mutate()
     private val radius = RADIUS_DP * dens
     private val node = android.graphics.RenderNode("settings-button")
     private val disc = android.graphics.Path()
@@ -76,6 +78,12 @@ class WidgetSettingsButton(context: Context) : View(context) {
             invalidate()
         }
 
+    var turn = false
+        set(v) {
+            field = v
+            invalidate()
+        }
+
     init {
         look()
         elevation = 2 * dens
@@ -89,6 +97,7 @@ class WidgetSettingsButton(context: Context) : View(context) {
         val icon = if (overDark) Color.WHITE else Color.rgb(28, 28, 30)
         gear.setTint(icon)
         arrow.setTint(icon)
+        rotateIcon.setTint(icon)
         invalidate()
     }
 
@@ -122,9 +131,10 @@ class WidgetSettingsButton(context: Context) : View(context) {
         val t = cy.toInt() - half
         c.save()
         c.rotate(90f * back, cx, cy)
-        gear.setBounds(l, t, l + 2 * half, t + 2 * half)
-        gear.alpha = (255 * (1f - back)).toInt()
-        gear.draw(c)
+        val icon = if (turn) rotateIcon else gear
+        icon.setBounds(l, t, l + 2 * half, t + 2 * half)
+        icon.alpha = (255 * (1f - back)).toInt()
+        icon.draw(c)
         c.restore()
         arrow.setBounds(l, t, l + 2 * half, t + 2 * half)
         arrow.alpha = (255 * back).toInt()
@@ -132,8 +142,8 @@ class WidgetSettingsButton(context: Context) : View(context) {
     }
 
     companion object {
-        private const val SIZE_DP = 40
-        private const val ICON_DP = 24
+        private const val SIZE_DP = 44
+        private const val ICON_DP = 26
         private const val RADIUS_DP = 12f
         private const val INNER_DP = 14
         private const val BLUR_DP = 10f
