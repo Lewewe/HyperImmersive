@@ -20,8 +20,8 @@ android {
         applicationId = "com.yzc26623.HyperImmersive"
         minSdk = 35
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.1.0-alpha"
+        versionCode = 3
+        versionName = "0.2.0-alpha"
     }
     signingConfigs {
         if (releaseStorePath != null) {
