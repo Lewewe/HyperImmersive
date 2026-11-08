@@ -184,6 +184,7 @@ class StandbyService : Service(), SensorEventListener {
             NotificationManager.IMPORTANCE_HIGH).apply { setSound(null, null) })
         val pi = android.app.PendingIntent.getActivity(this, 0, intent,
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
+        EdgeLock.launch(this, pi)
         nm.notify(SHOW_ID, Notification.Builder(this, CHANNEL_SHOW)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
             .setContentTitle(getString(R.string.standby))

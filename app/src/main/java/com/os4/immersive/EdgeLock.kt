@@ -59,6 +59,18 @@ object EdgeLock {
         }
     }
 
+    /**
+     * From the app: StandBy opened by SystemUI, which may start activities from the background;
+     * the app alone may not without an overlay of its own showing, and a full-screen intent only
+     * opens it with the screen off.
+     */
+    fun launch(c: Context, open: android.app.PendingIntent) {
+        runCatching {
+            c.sendBroadcast(Intent(ACTION).setPackage(SYSTEMUI).putExtra("launch", open), null,
+                android.app.BroadcastOptions.makeBasic().setShareIdentityEnabled(true).toBundle())
+        }
+    }
+
     // ------------------------------------------------------------------ hooked side
 
     private val main by lazy { Handler(Looper.getMainLooper()) }
@@ -78,6 +90,14 @@ object EdgeLock {
                 if (sentFromPackage != APP) return
                 if (i.getBooleanExtra("sleep", false)) {
                     goToSleep(c)
+                    return
+                }
+                i.getParcelableExtra("launch", android.app.PendingIntent::class.java)?.let { open ->
+                    runCatching {
+                        open.send(c, 0, null, null, null, null, android.app.ActivityOptions.makeBasic()
+                            .setPendingIntentBackgroundActivityStartMode(
+                                android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle())
+                    }.onFailure { Log.w(TAG, "StandBy not opened: $it") }
                     return
                 }
                 val lock = i.getBooleanExtra("lock", false)
