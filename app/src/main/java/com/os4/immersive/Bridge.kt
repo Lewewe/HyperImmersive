@@ -32,6 +32,7 @@ class Bridge : ContentProvider() {
             "configure" -> extras?.let { e ->
                 if (e.containsKey("blurBackdrop")) Prefs.setBlurBackdrop(c, e.getBoolean("blurBackdrop"))
                 if (e.containsKey("lyricsBeside")) Prefs.setLyricsBeside(c, e.getBoolean("lyricsBeside"))
+                if (e.containsKey("lyricsStyle")) Prefs.setLyricsStyle(c, e.getInt("lyricsStyle"))
                 if (e.containsKey("idleSeconds")) Prefs.setIdleSeconds(c, e.getInt("idleSeconds"))
                 if (e.containsKey("offSeconds")) Prefs.setOffSeconds(c, e.getInt("offSeconds"))
                 if (e.containsKey("enabled")) {
@@ -72,6 +73,7 @@ class Bridge : ContentProvider() {
         putBoolean("watching", StandbyService.running)
         putBoolean("blurBackdrop", Prefs.blurBackdrop(c))
         putBoolean("lyricsBeside", Prefs.lyricsBeside(c))
+        putInt("lyricsStyle", Prefs.lyricsStyle(c))
         putInt("idleSeconds", Prefs.idleSeconds(c))
         putInt("offSeconds", Prefs.offSeconds(c))
         putBoolean("notificationAccess", c.getSystemService(NotificationManager::class.java)

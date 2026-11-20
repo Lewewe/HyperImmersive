@@ -298,9 +298,11 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         val cur = current
         val inT = if (out == null) swap else ((swap - 0.15f) / 0.85f).coerceIn(0f, 1f)
         val beside = beside()
+        val column = column()
         // The cover gives way to the lyric, and back. Beside it, it is drawn over the lyric
-        // further down, shrinking into the lyrics button's place instead.
-        if (!beside) layer(c, coverNode, w, h, cx, cy, 1f - lyricsT) { cc ->
+        // further down, shrinking into the lyrics button's place instead - or, in the column
+        // style, it stays where it is.
+        if (!beside || column) layer(c, coverNode, w, h, cx, cy, if (column) 1f else 1f - lyricsT) { cc ->
             drawCover(cc, w, h, enter, side, radius, base, out, cur, inT, cx, cy, 1f)
         }
 
@@ -308,14 +310,26 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         val textLeft = cx + side / 2f + h * 0.08f
         val textW = w - textLeft - h * 0.08f
         // Clear of the front camera, which sits on this short edge of the turned page.
-        val lyricsLeft = max(h * 0.08f, cameraDepth + 12f * dens)
-        val lyricsRight = textLeft - h * 0.06f
-        layer(c, lyricsNode, w, h, (lyricsLeft + lyricsRight) / 2f, h / 2f, lyricsT) { lc ->
-            if (flow.draw(lc, lyricsLeft, 0f, lyricsRight, h, enter)) invalidate()
+        if (column) {
+            // Between the artist and the bar, which have moved apart for it (see [colOpen]).
+            val top = titleBase(h) + h * 0.055f * textK() * 1.4f + h * 0.05f
+            val bottom = barY(h) - h * 0.05f
+            layer(c, lyricsNode, w, h, textLeft + textW / 2f, (top + bottom) / 2f, lyricsT) { lc ->
+                lc.save()
+                lc.clipRect(textLeft, top, textLeft + textW, bottom)
+                if (flow.draw(lc, textLeft, top, textLeft + textW, bottom, enter)) invalidate()
+                lc.restore()
+            }
+        } else {
+            val lyricsLeft = max(h * 0.08f, cameraDepth + 12f * dens)
+            val lyricsRight = textLeft - h * 0.06f
+            layer(c, lyricsNode, w, h, (lyricsLeft + lyricsRight) / 2f, h / 2f, lyricsT) { lc ->
+                if (flow.draw(lc, lyricsLeft, 0f, lyricsRight, h, enter)) invalidate()
+            }
         }
         drawLyricsButton(c, textLeft, textW, h, enter)
         // Beside it: the cover over the lyric on its way into the button's place, and resting there.
-        if (beside) drawCover(c, w, h, enter, side, radius, base, out, cur, inT,
+        if (beside && !column) drawCover(c, w, h, enter, side, radius, base, out, cur, inT,
             lerp(cx, textLeft + lyricsSide(h) * THUMB / 2f, lyricsT), lerp(cy, titleMidY(h), lyricsT),
             lerp(1f, lyricsSide(h) * THUMB / (side * base), lyricsT))
         // The old title slides up as it fades, from where it stood - not from one step above it.
@@ -324,7 +338,24 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         drawText(c, cur, textLeft, textW, h, enter * inT, 1f - inT)
         drawProgress(c, textLeft, textW, h, enter * (if (cur != null || out != null) 1f else 0f))
         drawControls(c, textLeft, textW, h, enter)
-        drawVisualizer(c, textLeft + textW, h, enter)
+        // In the column style the title row goes up under the status cluster: the bars move down
+        // to the controls' right end, as the lyrics button does to their left.
+        // It changes places faded, shrunk and blurred as the button does; in the row it is the
+        // button's size.
+        val vo = colOpen()
+        val box = h * VIS_W
+        val tx = textLeft + textW - box / 2f
+        val ty = titleBase(h) - h * 0.075f * textK() * 0.36f
+        // The button's mask blur is drawn in its path's units, scaled up with it.
+        val visBlur = BUTTON_BLUR_DP * lyricsIcon.scale(lyricsSide(h))
+        layer(c, visTitleNode, w, h, tx, ty, (1f - 2f * vo).coerceIn(0f, 1f), visBlur) { vc ->
+            drawVisualizer(vc, tx, ty, box, enter)
+        }
+        val rx = textLeft + textW * (1f - ROW_ROOM / 2f)
+        val ry = controlsY(h)
+        layer(c, visRowNode, w, h, rx, ry, (2f * vo - 1f).coerceIn(0f, 1f), visBlur) { vc ->
+            drawVisualizer(vc, rx, ry, lyricsSide(h), enter)
+        }
     }
 
     /** The cover at [cx], [cy], [k] times its size: through a flip, a track change, or none. */
@@ -455,7 +486,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         } else target
         barF = f
 
-        val thick = dens * (6f + 6f * grip)
+        // The column style thins the bar for the lyric's room.
+        val thick = dens * (6f + 6f * grip) * lerp(1f, COL_THIN, colOpen())
         val r = thick / 2f
         val rs = trackShader
         if (rs != null) {
@@ -480,8 +512,11 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         } else drawOwnTrack(c, barLeft, barRight, y, thick, r, f, alpha)
 
         // Under the bar, small, at its two ends - the earlier layout, which the user preferred.
+        // The column style drops them for the lyric's room.
+        val timeA = alpha * (1f - colOpen())
+        if (timeA <= 0f) return
         timePaint.textSize = h * 0.034f
-        timePaint.color = Color.argb(((170 + 70 * grip) * alpha).toInt(), 255, 255, 255)
+        timePaint.color = Color.argb(((170 + 70 * grip) * timeA).toInt(), 255, 255, 255)
         val ty = y + thick / 2f + h * 0.05f
         timePaint.textAlign = Paint.Align.LEFT
         c.drawText(clock((f * d).toLong()), barLeft, ty, timePaint)
@@ -531,7 +566,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     /** A finger down on the bar (with some slack around it) starts a scrub. */
     fun scrubStart(x: Float, y: Float): Boolean {
         if (bar.isEmpty) return false
-        val slackY = bar.height()
+        // The open column style brings the controls up close under the bar: no slack over them.
+        val slackY = bar.height() * (1f - colOpen())
         if (y < bar.top - slackY || y > bar.bottom + slackY ||
             x < bar.left - slackY || x > bar.right + slackY) return false
         setGrip(true)
@@ -565,9 +601,10 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         val y = controlsY(h)
         // Beside the cover, the lyrics button comes down to the row's left end: the row slides
         // right to make room for it.
+        // In the column style the visualizer comes down to its right end too.
         val room = width0 * ROW_ROOM * open()
         val left = left0 + room
-        val width = width0 - room
+        val width = width0 - room - (if (Spectrum.connected) width0 * ROW_ROOM * colOpen() else 0f)
         icon.alpha = (255 * enter).toInt()
         for (i in 0..2) {
             val cx = when (i) {
@@ -639,16 +676,21 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         if (alpha <= 0f || width <= 0f) return
         val dy = rise * h * 0.04f
         // The lyrics button stands where the title starts (or the cover shrunk into its place);
-        // the title makes room for it, more for the cover, which is the larger.
-        val room = lyricsRoom(h) + lyricsSide(h) * (THUMB - 1f) * open()
+        // the title makes room for it, more for the cover, which is the larger. In the column
+        // style nothing takes the button's place: the title takes the room back.
+        val room = if (column()) lyricsRoom(h) * (1f - lyricsT)
+            else lyricsRoom(h) + lyricsSide(h) * (THUMB - 1f) * open()
         @Suppress("NAME_SHADOWING") val left = left + room
         @Suppress("NAME_SHADOWING") val width = width - room
-        titlePaint.textSize = h * 0.075f
-        artistPaint.textSize = h * 0.055f
+        titlePaint.textSize = h * 0.075f * textK()
+        artistPaint.textSize = h * 0.055f * textK()
         titlePaint.alpha = (255 * alpha).toInt()
         artistPaint.alpha = (170 * alpha).toInt()
-        // The title gives up the visualizer's corner on its right.
-        val titleW = if (Spectrum.connected) width - h * (VIS_W + 0.03f) else width
+        // The title gives up the visualizer's corner on its right, while the bars are there.
+        // Open in the column style it goes up level with the status ring (48dp in from the
+        // edge, see StandbyView.drawStatus): it stops short of it.
+        val ring = max(0f, 56f * dens - h * 0.08f) * colOpen()
+        val titleW = (if (Spectrum.connected) width - h * (VIS_W + 0.03f) * (1f - colOpen()) else width) - ring
         val t = TextUtils.ellipsize(title, titlePaint, titleW, TextUtils.TruncateAt.END).toString()
         val base = titleBase(h)
         c.drawText(t, left, base + dy, titlePaint)
@@ -675,12 +717,10 @@ class MusicPage(private val context: android.content.Context, private val dens: 
      * slot: bars a twelfth of the slot wide, spread over 7/8 of it, each 9% + 85% * level of
      * its height and never shorter than wide, in the Bar color setting's gradient top to bottom.
      */
-    private fun drawVisualizer(c: Canvas, right: Float, h: Float, alpha: Float) {
+    private fun drawVisualizer(c: Canvas, cx: Float, cy: Float, box: Float, alpha: Float) {
         if (!Spectrum.connected || alpha <= 0f) return
         Spectrum.step()
-        val box = h * VIS_W
-        val cy = titleBase(h) - h * 0.075f * 0.36f
-        val left = right - box
+        val left = cx - box / 2f
         val width = box / 12f
         val pitch = (box * 0.875f - width) / 4f
         val x0 = left + box / 2f - 2f * pitch - width / 2f
@@ -857,6 +897,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     private val flow = LyricsFlow(dens)
     private val coverNode = android.graphics.RenderNode("cover")
     private val lyricsNode = android.graphics.RenderNode("lyrics")
+    private val visTitleNode = android.graphics.RenderNode("visTitle")
+    private val visRowNode = android.graphics.RenderNode("visRow")
 
     /**
      * One side of the cover/lyric switch, recorded so it can scale, fade and blur as one: the
@@ -864,7 +906,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
      * from there the same way - LyricsButton's look, larger.
      */
     private fun layer(c: Canvas, node: android.graphics.RenderNode, w: Float, h: Float,
-                      px: Float, py: Float, shown: Float, body: (Canvas) -> Unit) {
+                      px: Float, py: Float, shown: Float, blurDp: Float = SWITCH_BLUR_DP,
+                      body: (Canvas) -> Unit) {
         if (shown <= 0f) return
         if (shown >= 1f || !c.isHardwareAccelerated) { body(c); return }
         node.setPosition(0, 0, w.toInt(), h.toInt())
@@ -876,7 +919,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         node.scaleX = k
         node.scaleY = k
         node.alpha = shown
-        val blur = (1f - shown) * SWITCH_BLUR_DP * dens
+        val blur = (1f - shown) * blurDp * dens
         node.setRenderEffect(if (blur < 0.5f) null
             else android.graphics.RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.DECAL))
         c.drawRenderNode(node)
@@ -889,10 +932,19 @@ class MusicPage(private val context: android.content.Context, private val dens: 
 
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
 
-    // The column's three rows, centred on the cover.
-    private fun titleBase(h: Float) = h * 0.38f + columnShift(h)
-    private fun barY(h: Float) = h * 0.56f + columnShift(h)
-    private fun controlsY(h: Float) = h * 0.78f + columnShift(h)
+    /** The column style (Prefs.lyricsStyle 1): the column opens for the lyric between its rows. */
+    private fun column() = beside() && Prefs.lyricsStyle(context) == 1
+
+    /** How far the column has opened for the lyric in the column style, else 0. */
+    private fun colOpen() = if (column()) lyricsT else 0f
+
+    /** The title and artist's size: smaller in the open column style. */
+    private fun textK() = lerp(1f, COL_TEXT, colOpen())
+
+    // The column's three rows: centred on the cover, or pushed apart for the lyric between them.
+    private fun titleBase(h: Float) = lerp(h * 0.38f + columnShift(h), h * COL_TITLE, colOpen())
+    private fun barY(h: Float) = lerp(h * 0.56f + columnShift(h), h * COL_BAR, colOpen())
+    private fun controlsY(h: Float) = lerp(h * 0.78f + columnShift(h), h * COL_CONTROLS, colOpen())
 
     /** Where the lyrics button stands by the title: centred on the title and artist together. */
     private fun titleMidY(h: Float) = (titleBase(h) - h * 0.075f * 0.84f +
@@ -911,6 +963,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         /** The cover and the lyric switch places through this size, faded and blurred. */
         const val GONE_SCALE = 0.6f
         const val SWITCH_BLUR_DP = 24f
+        /** The lyrics button's mask blur as it changes places, in its icon's path units. */
+        const val BUTTON_BLUR_DP = 8f
         const val SWAP_FROM = 0.9f
         const val SWAP_TO = 0.86f
         const val FLIP_DAMPING = 0.72f
@@ -930,6 +984,14 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         const val SKIP_SPREAD = 0.36f
         /** The cover's side, shrunk into the lyrics button's place, against the button's. */
         const val THUMB = 1.8f
+        /** The column style, open: the title's baseline, the bar and the controls, as shares of the height. */
+        // The title's top as far from the top edge as the controls are from the bottom one.
+        const val COL_TITLE = 0.145f
+        const val COL_BAR = 0.75f
+        const val COL_CONTROLS = 0.86f
+        /** The column style, open: the title and artist's size and the bar's thickness, against closed. */
+        const val COL_TEXT = 0.75f
+        const val COL_THIN = 0.5f
         /** The share of the controls' row the lyrics button takes at its left end. */
         const val ROW_ROOM = 0.2f
     }

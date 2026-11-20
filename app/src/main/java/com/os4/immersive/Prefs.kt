@@ -23,6 +23,15 @@ object Prefs {
     fun setLyricsBeside(c: Context, on: Boolean) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .edit().putBoolean(LYRICS_BESIDE, on).apply()
 
+    private const val LYRICS_STYLE = "lyrics_style"
+
+    /** How the lyric opens beside the cover: 0 the cover shrinks into the button's place, 1 the column opens for it. */
+    fun lyricsStyle(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        .getInt(LYRICS_STYLE, 0)
+
+    fun setLyricsStyle(c: Context, style: Int) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        .edit().putInt(LYRICS_STYLE, style.coerceIn(0, 1)).apply()
+
     private const val IDLE_SECONDS = "idle_seconds"
 
     /** How long without a touch before StandBy goes idle, as HMC-E's Extensions page set it; 0 is never. */

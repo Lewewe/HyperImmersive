@@ -114,7 +114,7 @@ class LyricsIcon {
     }
 
     fun draw(c: Canvas, cx: Float, cy: Float, side: Float, on: Boolean, paint: Paint) {
-        val k = side * FILL / maxOf(frame.width(), frame.height())
+        val k = scale(side)
         c.save()
         c.translate(cx, cy)
         c.scale(k, k)
@@ -122,6 +122,9 @@ class LyricsIcon {
         c.drawPath(if (on) filled else outline, paint)
         c.restore()
     }
+
+    /** How much the icon's path is scaled up at [side]: a paint's mask blur grows with it. */
+    fun scale(side: Float) = side * FILL / maxOf(frame.width(), frame.height())
 
     private fun cut(note: Path, gap: Float): Path {
         val stroke = Paint().apply {
