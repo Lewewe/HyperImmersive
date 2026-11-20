@@ -317,14 +317,14 @@ class MusicPage(private val context: android.content.Context, private val dens: 
             layer(c, lyricsNode, w, h, textLeft + textW / 2f, (top + bottom) / 2f, lyricsT) { lc ->
                 lc.save()
                 lc.clipRect(textLeft, top, textLeft + textW, bottom)
-                if (flow.draw(lc, textLeft, top, textLeft + textW, bottom, enter)) invalidate()
+                drawLyric(lc, textLeft, top, textLeft + textW, bottom, enter, h * 0.055f)
                 lc.restore()
             }
         } else {
             val lyricsLeft = max(h * 0.08f, cameraDepth + 12f * dens)
             val lyricsRight = textLeft - h * 0.06f
             layer(c, lyricsNode, w, h, (lyricsLeft + lyricsRight) / 2f, h / 2f, lyricsT) { lc ->
-                if (flow.draw(lc, lyricsLeft, 0f, lyricsRight, h, enter)) invalidate()
+                drawLyric(lc, lyricsLeft, 0f, lyricsRight, h, enter, h * 0.055f)
             }
         }
         drawLyricsButton(c, textLeft, textW, h, enter)
@@ -827,15 +827,39 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         val has = HmcLyrics.matches(MediaArt.key.substringBefore('|'), MediaArt.title)
         if (has != lyricsWanted) {
             lyricsWanted = has
+            if (!has) noneSince = android.os.SystemClock.uptimeMillis()
+        }
+        // Open, the lyric stays through a song without one (it says so) and so does its button,
+        // to close it with; closed there, the button goes.
+        val shown = has || lyricsOn
+        if (shown != lyricsBtnShown) {
+            lyricsBtnShown = shown
             lyricsBtnAnim?.cancel()
-            lyricsBtnAnim = ValueAnimator.ofFloat(lyricsBtn, if (has) 1f else 0f).apply {
-                duration = if (has) 260L else 200L
+            lyricsBtnAnim = ValueAnimator.ofFloat(lyricsBtn, if (shown) 1f else 0f).apply {
+                duration = if (shown) 260L else 200L
                 interpolator = android.view.animation.DecelerateInterpolator()
                 addUpdateListener { lyricsBtn = it.animatedValue as Float; invalidate() }
                 start()
             }
-            if (!has && lyricsOn) toggleLyrics()
         }
+    }
+
+    private var lyricsBtnShown = false
+    private var noneSince = 0L
+    private val nonePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+
+    /** The lyric in its place, or - once a new song has had a moment to bring one - that it has none. */
+    private fun drawLyric(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, alpha: Float, size: Float) {
+        if (lyricsWanted) {
+            if (flow.draw(c, left, top, right, bottom, alpha)) invalidate()
+            return
+        }
+        val a = ((android.os.SystemClock.uptimeMillis() - noneSince - NONE_AFTER_MS) / 200f).coerceIn(0f, 1f)
+        if (a < 1f) invalidate()
+        if (a <= 0f) return
+        nonePaint.textSize = size
+        nonePaint.alpha = (170 * a * alpha).toInt()
+        c.drawText(context.getString(R.string.no_lyrics), left, (top + bottom) / 2f + size * 0.35f, nonePaint)
     }
 
     private fun toggleLyrics() {
@@ -963,6 +987,8 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         /** The cover and the lyric switch places through this size, faded and blurred. */
         const val GONE_SCALE = 0.6f
         const val SWITCH_BLUR_DP = 24f
+        /** How long a new song may take to bring its lyric before the page says it has none. */
+        const val NONE_AFTER_MS = 1_500L
         /** The lyrics button's mask blur as it changes places, in its icon's path units. */
         const val BUTTON_BLUR_DP = 8f
         const val SWAP_FROM = 0.9f

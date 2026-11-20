@@ -9,6 +9,7 @@
     <string name="page_new">新建页面</string>
     <string name="page_limit">已达页面上限</string>
     <string name="music_not_playing">未在播放</string>
+    <string name="no_lyrics">暂无歌词</string>
 
     <string name="widget_change">更换小组件</string>
     <string name="widget_remove">移除小组件</string>

@@ -10,6 +10,7 @@
     <string name="page_new">New page</string>
     <string name="page_limit">Page limit reached</string>
     <string name="music_not_playing">Not Playing</string>
+    <string name="no_lyrics">No lyrics</string>
 
     <string name="widget_change">Change Widget</string>
     <string name="widget_remove">Remove Widget</string>
