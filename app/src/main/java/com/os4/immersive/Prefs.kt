@@ -14,6 +14,15 @@ object Prefs {
     fun setBlurBackdrop(c: Context, on: Boolean) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .edit().putBoolean(BLUR, on).apply()
 
+    private const val LYRICS_BESIDE = "lyrics_beside"
+
+    /** The lyric opens beside the cover, in the title's column, instead of in its place. Off by default. */
+    fun lyricsBeside(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        .getBoolean(LYRICS_BESIDE, false)
+
+    fun setLyricsBeside(c: Context, on: Boolean) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        .edit().putBoolean(LYRICS_BESIDE, on).apply()
+
     private const val IDLE_SECONDS = "idle_seconds"
 
     /** How long without a touch before StandBy goes idle, as HMC-E's Extensions page set it; 0 is never. */

@@ -297,33 +297,11 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         val out = outgoing
         val cur = current
         val inT = if (out == null) swap else ((swap - 0.15f) / 0.85f).coerceIn(0f, 1f)
-        // The cover gives way to the lyric, and back.
-        layer(c, coverNode, w, h, cx, cy, 1f - lyricsT) { cc ->
-            val flipping = flipFrom != null || flipAngle % 360f != 0f
-            val fm = flipMatrix(cx, cy)
-            if (fm != null) { cc.save(); cc.concat(fm) }
-            if (flipping && current != null) {
-                // The flip carries the change: one cover, whichever face is up, no crossfade.
-                val face = flipFrom ?: current!!
-                cover(cc, face, cx, cy, side, radius, base, enter)
-            } else if (out != null) {
-                // The old cover gives way: down to SWAP_TO and out over the first two thirds.
-                val t = (swap / 0.66f).coerceIn(0f, 1f)
-                cover(cc, out, cx, cy, side, radius, base * (1f - (1f - SWAP_TO) * t),
-                    enter * (1f - t))
-            }
-            if (flipping && cur != null) {
-                Unit
-            } else if (cur != null) {
-                cover(cc, cur, cx, cy, side, radius, base * (SWAP_FROM + (1f - SWAP_FROM) * inT),
-                    enter * inT)
-            } else {
-                val s = base * (SWAP_FROM + (1f - SWAP_FROM) * inT)
-                rect.set(cx - side * s / 2, cy - side * s / 2, cx + side * s / 2, cy + side * s / 2)
-                placeholder.color = Color.argb((60 * enter * inT).toInt(), 255, 255, 255)
-                cc.drawRoundRect(rect, radius * s, radius * s, placeholder)
-            }
-            if (fm != null) cc.restore()
+        val beside = beside()
+        // The cover gives way to the lyric, and back. Beside it, it is drawn over the lyric
+        // further down, shrinking into the lyrics button's place instead.
+        if (!beside) layer(c, coverNode, w, h, cx, cy, 1f - lyricsT) { cc ->
+            drawCover(cc, w, h, enter, side, radius, base, out, cur, inT, cx, cy, 1f)
         }
 
         // Title and artist beside the cover; they follow the cover's swap, sliding up a little.
@@ -335,7 +313,11 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         layer(c, lyricsNode, w, h, (lyricsLeft + lyricsRight) / 2f, h / 2f, lyricsT) { lc ->
             if (flow.draw(lc, lyricsLeft, 0f, lyricsRight, h, enter)) invalidate()
         }
-        drawLyricsButton(c, textLeft, h, enter)
+        drawLyricsButton(c, textLeft, textW, h, enter)
+        // Beside it: the cover over the lyric on its way into the button's place, and resting there.
+        if (beside) drawCover(c, w, h, enter, side, radius, base, out, cur, inT,
+            lerp(cx, textLeft + lyricsSide(h) * THUMB / 2f, lyricsT), lerp(cy, titleMidY(h), lyricsT),
+            lerp(1f, lyricsSide(h) * THUMB / (side * base), lyricsT))
         // The old title slides up as it fades, from where it stood - not from one step above it.
         val outT = (swap / 0.5f).coerceIn(0f, 1f)
         drawText(c, out, textLeft, textW, h, enter * (1f - outT), -outT)
@@ -343,6 +325,37 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         drawProgress(c, textLeft, textW, h, enter * (if (cur != null || out != null) 1f else 0f))
         drawControls(c, textLeft, textW, h, enter)
         drawVisualizer(c, textLeft + textW, h, enter)
+    }
+
+    /** The cover at [cx], [cy], [k] times its size: through a flip, a track change, or none. */
+    private fun drawCover(cc: Canvas, w: Float, h: Float, enter: Float, side: Float, radius: Float,
+                          base0: Float, out: Cover?, cur: Cover?, inT: Float, cx: Float, cy: Float, k: Float) {
+        val base = base0 * k
+        val flipping = flipFrom != null || flipAngle % 360f != 0f
+        val fm = flipMatrix(cx, cy)
+        if (fm != null) { cc.save(); cc.concat(fm) }
+        if (flipping && current != null) {
+            // The flip carries the change: one cover, whichever face is up, no crossfade.
+            val face = flipFrom ?: current!!
+            cover(cc, face, cx, cy, side, radius, base, enter)
+        } else if (out != null) {
+            // The old cover gives way: down to SWAP_TO and out over the first two thirds.
+            val t = (swap / 0.66f).coerceIn(0f, 1f)
+            cover(cc, out, cx, cy, side, radius, base * (1f - (1f - SWAP_TO) * t),
+                enter * (1f - t))
+        }
+        if (flipping && cur != null) {
+            Unit
+        } else if (cur != null) {
+            cover(cc, cur, cx, cy, side, radius, base * (SWAP_FROM + (1f - SWAP_FROM) * inT),
+                enter * inT)
+        } else {
+            val s = base * (SWAP_FROM + (1f - SWAP_FROM) * inT)
+            rect.set(cx - side * s / 2, cy - side * s / 2, cx + side * s / 2, cy + side * s / 2)
+            placeholder.color = Color.argb((60 * enter * inT).toInt(), 255, 255, 255)
+            cc.drawRoundRect(rect, radius * s, radius * s, placeholder)
+        }
+        if (fm != null) cc.restore()
     }
 
     // ------------------------------------------------------------------ progress
@@ -418,7 +431,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         if (d > 0L) { lastDuration = d; lastDurationAt = now0 }
         else if (now0 - lastDurationAt < 2000L) d = lastDuration
         if (alpha <= 0f || d <= 0L || width <= 0f) { bar.setEmpty(); return }
-        val y = h * 0.56f + columnShift(h)
+        val y = barY(h)
         val barLeft = left
         val barRight = left + width
         bar.set(barLeft, y - h * 0.04f, barRight, y + h * 0.04f)
@@ -547,9 +560,14 @@ class MusicPage(private val context: android.content.Context, private val dens: 
      * Centred under the progress bar, play/pause in the middle and previous/next an equal
      * [SKIP_SPREAD] of the bar's width to either side - the row mirrors the bar above it.
      */
-    private fun drawControls(c: Canvas, left: Float, width: Float, h: Float, enter: Float) {
+    private fun drawControls(c: Canvas, left0: Float, width0: Float, h: Float, enter: Float) {
         val size = h * 0.11f
-        val y = h * 0.78f + columnShift(h)
+        val y = controlsY(h)
+        // Beside the cover, the lyrics button comes down to the row's left end: the row slides
+        // right to make room for it.
+        val room = width0 * ROW_ROOM * open()
+        val left = left0 + room
+        val width = width0 - room
         icon.alpha = (255 * enter).toInt()
         for (i in 0..2) {
             val cx = when (i) {
@@ -620,8 +638,9 @@ class MusicPage(private val context: android.content.Context, private val dens: 
             context.getString(R.string.music_not_playing) else return
         if (alpha <= 0f || width <= 0f) return
         val dy = rise * h * 0.04f
-        // The lyrics button stands where the title starts; the title makes room for it.
-        val room = lyricsRoom(h)
+        // The lyrics button stands where the title starts (or the cover shrunk into its place);
+        // the title makes room for it, more for the cover, which is the larger.
+        val room = lyricsRoom(h) + lyricsSide(h) * (THUMB - 1f) * open()
         @Suppress("NAME_SHADOWING") val left = left + room
         @Suppress("NAME_SHADOWING") val width = width - room
         titlePaint.textSize = h * 0.075f
@@ -631,7 +650,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         // The title gives up the visualizer's corner on its right.
         val titleW = if (Spectrum.connected) width - h * (VIS_W + 0.03f) else width
         val t = TextUtils.ellipsize(title, titlePaint, titleW, TextUtils.TruncateAt.END).toString()
-        val base = h * 0.38f + columnShift(h)
+        val base = titleBase(h)
         c.drawText(t, left, base + dy, titlePaint)
         val artist = cover?.artist.orEmpty()
         if (artist.isNotEmpty()) {
@@ -660,7 +679,7 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         if (!Spectrum.connected || alpha <= 0f) return
         Spectrum.step()
         val box = h * VIS_W
-        val cy = h * 0.38f + columnShift(h) - h * 0.075f * 0.36f
+        val cy = titleBase(h) - h * 0.075f * 0.36f
         val left = right - box
         val width = box / 12f
         val pitch = (box * 0.875f - width) / 4f
@@ -803,16 +822,26 @@ class MusicPage(private val context: android.content.Context, private val dens: 
     /** How far the title moves right for the button. */
     private fun lyricsRoom(h: Float) = lyricsSide(h) * 1.6f * lyricsBtn
 
-    private fun drawLyricsButton(c: Canvas, left: Float, h: Float, alpha: Float) {
+    private fun drawLyricsButton(c: Canvas, left: Float, width: Float, h: Float, alpha: Float) {
         val side = lyricsSide(h)
-        val cx = left + side / 2f
-        // Centred on the title and artist together, as HMC-E's sits beside its card's.
-        val top = h * 0.38f + columnShift(h) - h * 0.075f * 0.84f
-        val bottom = h * 0.38f + columnShift(h) + h * 0.055f * 1.4f + h * 0.055f * 0.2f
-        val cy = (top + bottom) / 2f
         if (lyricsBtn <= 0f || alpha <= 0f) { buttons[3].setEmpty(); return }
-        buttons[3].set(cx - side * 0.8f, cy - side * 0.8f, cx + side * 0.8f, cy + side * 0.8f)
-        val look = lyricsBtn
+        val midY = titleMidY(h)
+        val o = open()
+        // Beside the cover it changes spot as HMC-E's big cover's does: out by the title in the
+        // first half of the switch (the cover flying into its place), in at the controls' left
+        // end in the second.
+        val atTitle = ((1f - 2f * o)).coerceIn(0f, 1f)
+        val atRow = (2f * o - 1f).coerceIn(0f, 1f)
+        val rowCx = left + width * ROW_ROOM / 2f
+        if (atTitle > 0f) lyricsButtonAt(c, left + side / 2f, midY, side, lyricsBtn * atTitle, alpha)
+        if (atRow > 0f) lyricsButtonAt(c, rowCx, controlsY(h), side, lyricsBtn * atRow, alpha)
+        // Taps go to where it is headed.
+        val (hx, hy) = if (o >= 0.5f) rowCx to controlsY(h) else (left + side / 2f) to midY
+        buttons[3].set(hx - side * 0.8f, hy - side * 0.8f, hx + side * 0.8f, hy + side * 0.8f)
+    }
+
+    private fun lyricsButtonAt(c: Canvas, cx: Float, cy: Float, side: Float, look: Float, alpha: Float) {
+        if (look <= 0f) return
         val k = (APPEAR_SCALE + (1f - APPEAR_SCALE) * look) * (if (pressed == 3) 0.85f else 1f)
         val blur = (1f - look) * 8f * dens
         if (blur != lyricsBlur) {
@@ -853,6 +882,22 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         c.drawRenderNode(node)
     }
 
+    private fun beside() = Prefs.lyricsBeside(context)
+
+    /** How far the column has opened for the lyric beside the cover: [lyricsT] there, else 0. */
+    private fun open() = if (beside()) lyricsT else 0f
+
+    private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
+
+    // The column's three rows, centred on the cover.
+    private fun titleBase(h: Float) = h * 0.38f + columnShift(h)
+    private fun barY(h: Float) = h * 0.56f + columnShift(h)
+    private fun controlsY(h: Float) = h * 0.78f + columnShift(h)
+
+    /** Where the lyrics button stands by the title: centred on the title and artist together. */
+    private fun titleMidY(h: Float) = (titleBase(h) - h * 0.075f * 0.84f +
+        titleBase(h) + h * 0.055f * 1.4f + h * 0.055f * 0.2f) / 2f
+
     private fun columnShift(h: Float): Float {
         val top = h * 0.38f - h * 0.075f * 0.84f
         val bottom = h * 0.78f + h * 0.11f * 0.4f
@@ -883,5 +928,9 @@ class MusicPage(private val context: android.content.Context, private val dens: 
         const val TRACK_SETTLE_MS = 2_000L
         /** Previous/next from the middle, as a share of the bar's width. */
         const val SKIP_SPREAD = 0.36f
+        /** The cover's side, shrunk into the lyrics button's place, against the button's. */
+        const val THUMB = 1.8f
+        /** The share of the controls' row the lyrics button takes at its left end. */
+        const val ROW_ROOM = 0.2f
     }
 }
