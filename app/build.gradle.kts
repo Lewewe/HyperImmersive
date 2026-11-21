@@ -20,8 +20,8 @@ android {
         applicationId = "com.yzc26623.HyperImmersive"
         minSdk = 35
         targetSdk = 37
-        versionCode = 3
-        versionName = "0.2.0-alpha"
+        versionCode = 7
+        versionName = "0.2.3-alpha"
     }
     signingConfigs {
         if (releaseStorePath != null) {
@@ -50,5 +50,6 @@ android {
 dependencies {
     // HyperImmersive is its own LSPosed module too (EdgeLock); the framework provides the API.
     compileOnly("io.github.libxposed:api:102.0.0")
+    implementation("io.github.libxposed:service:102.0.0")
     testImplementation("junit:junit:4.13.2")
 }

@@ -9,8 +9,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Binder
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 
 /**
  * HyperImmersive has no screen of its own: it is an extension of HyperMusicCover-Enhanced, whose
@@ -25,9 +27,16 @@ class Bridge : ContentProvider() {
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         val c = context ?: return null
-        val caller = callingPackage
-        if (caller != HMC || c.packageManager.checkSignatures(caller, c.packageName) !=
-            PackageManager.SIGNATURE_MATCH) return null
+        val uid = Binder.getCallingUid()
+        if (method == "wake" && uid == 0) return Bundle()
+        if (uid >= android.os.Process.FIRST_APPLICATION_UID &&
+            c.checkCallingPermission(MANAGE_EXTENSION) == PackageManager.PERMISSION_GRANTED) {
+            Prefs.rememberHostUid(c, uid)
+        } else {
+            val caller = runCatching { callingPackage }.getOrNull()
+            if (caller != HMC || c.packageManager.checkSignatures(caller, c.packageName) !=
+                PackageManager.SIGNATURE_MATCH) return null
+        }
         when (method) {
             "configure" -> extras?.let { e ->
                 if (e.containsKey("blurBackdrop")) Prefs.setBlurBackdrop(c, e.getBoolean("blurBackdrop"))
@@ -41,6 +50,7 @@ class Bridge : ContentProvider() {
                 }
             }
             "preview" -> preview(c)
+            "requestScopes" -> ScopeRequester.requestScope()
             // After an install nothing has started the watcher yet, and the boot receiver may not fire.
             "query" -> if (!StandbyService.running) watch(c)
             else -> return null
@@ -52,11 +62,13 @@ class Bridge : ContentProvider() {
     private fun hookActive(c: Context): Boolean? {
         val done = java.util.concurrent.CountDownLatch(1)
         var active = false
+        val installTime = c.packageManager.getPackageInfo(c.packageName, 0).lastUpdateTime
         c.sendOrderedBroadcast(Intent(EdgeLock.ACTION).setPackage(EdgeLock.SYSTEMUI)
             .putExtra(EdgeLock.PING, true).addFlags(Intent.FLAG_RECEIVER_FOREGROUND), null,
             object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
-                    active = resultCode == EdgeLock.LOADED
+                    active = resultCode == EdgeLock.LOADED && installTime > 0 &&
+                        getResultExtras(false)?.getLong(EdgeLock.INSTALL_TIME) == installTime
                     done.countDown()
                 }
             }, android.os.Handler(android.os.Looper.getMainLooper()), 0, null, null)
@@ -65,6 +77,10 @@ class Bridge : ContentProvider() {
 
     private fun state(c: Context) = Bundle().apply {
         putBoolean("installed", true)
+        putInt("setupProtocol", 1)
+        val scopeState = ScopeRequester.state()
+        putString("scopeState", scopeState)
+        putBoolean("scopesGranted", scopeState == "ready")
         hookActive(c)?.let { putBoolean("hookActive", it) }
         putString("version", runCatching {
             c.packageManager.getPackageInfo(c.packageName, 0).versionName
@@ -114,19 +130,40 @@ class Bridge : ContentProvider() {
 
     companion object {
         private const val HMC = "com.yzc26623.HyperMusicCoverEnhanced"
+        private const val MANAGE_EXTENSION = "com.yzc26623.HyperImmersive.permission.MANAGE_EXTENSION"
         private const val PREVIEW_ANCHOR_MS = 200L
         private const val HOOK_ANSWER_MS = 1_500L
 
         /** HI is an extension: without HMC-E, signed like this app, it does not run. */
-        fun hmcReady(c: Context) = runCatching {
-            c.packageManager.getPackageInfo(HMC, 0)
-            c.packageManager.checkSignatures(HMC, c.packageName) == PackageManager.SIGNATURE_MATCH
-        }.getOrDefault(false)
+        fun hmcReady(c: Context): Boolean {
+            val identity = Binder.clearCallingIdentity()
+            try {
+                // HyperOS can hide the host's package name from the extension even after valid IPC.
+                val uid = Prefs.hostUid(c)
+                if (uid >= android.os.Process.FIRST_APPLICATION_UID &&
+                    c.checkPermission(MANAGE_EXTENSION, -1, uid) == PackageManager.PERMISSION_GRANTED) return true
+                val signature = c.packageManager.checkSignatures(HMC, c.packageName)
+                return signature == PackageManager.SIGNATURE_MATCH
+            } catch (e: RuntimeException) {
+                Log.w("HyperImmersive", "HMC-E signature check failed", e)
+                return false
+            } finally {
+                Binder.restoreCallingIdentity(identity)
+            }
+        }
 
         /** The watcher as [Prefs.enabled] wants it, while HMC-E is there. */
         fun watch(c: Context) {
             val i = Intent(c, StandbyService::class.java)
-            if (Prefs.enabled(c) && hmcReady(c)) runCatching { c.startForegroundService(i) } else c.stopService(i)
+            if (!Prefs.enabled(c)) {
+                c.stopService(i)
+            } else if (hmcReady(c)) {
+                runCatching { c.startForegroundService(i) }
+                    .onFailure { Log.w("HyperImmersive", "StandBy watcher could not start", it) }
+            } else {
+                Log.w("HyperImmersive", "StandBy watcher could not verify HMC-E")
+                c.stopService(i)
+            }
         }
     }
 }

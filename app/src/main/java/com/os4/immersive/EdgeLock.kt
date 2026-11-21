@@ -27,6 +27,7 @@ object EdgeLock {
     const val ACTION = "com.os4.immersive.EDGE_LOCK"
     const val SYSTEMUI = "com.android.systemui"
     const val PING = "ping"
+    const val INSTALL_TIME = "installTime"
     const val LOADED = 1
     const val REPEAT_MS = 1_000L
     private const val EXPIRE_MS = 3_000L
@@ -80,10 +81,12 @@ object EdgeLock {
     private val expire = Runnable { set(false) }
 
     fun listen(app: Application) {
+        val installTime = runCatching { app.packageManager.getPackageInfo(APP, 0).lastUpdateTime }.getOrDefault(0L)
         app.registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
                 // Bridge asking whether this hook is loaded: says nothing and does nothing else.
                 if (i.getBooleanExtra(PING, false)) {
+                    getResultExtras(true)?.putLong(INSTALL_TIME, installTime)
                     resultCode = LOADED
                     return
                 }

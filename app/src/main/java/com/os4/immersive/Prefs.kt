@@ -68,6 +68,14 @@ object Prefs {
     fun setEnabled(c: Context, on: Boolean) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         .edit().putBoolean(ENABLED, on).apply()
 
+    private const val HOST_UID = "host_uid"
+
+    fun hostUid(c: Context): Int = c.getSharedPreferences(FILE, Context.MODE_PRIVATE).getInt(HOST_UID, -1)
+
+    fun rememberHostUid(c: Context, uid: Int) {
+        val prefs = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        if (prefs.getInt(HOST_UID, -1) != uid) prefs.edit().putInt(HOST_UID, uid).apply()
+    }
 
     /** How many pages an install from before page ids had added (its pages were 1..2+n). */
     private fun customPages(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
