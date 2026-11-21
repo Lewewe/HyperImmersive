@@ -21,7 +21,7 @@ android {
         minSdk = 35
         targetSdk = 37
         versionCode = 7
-        versionName = "0.2.3-alpha"
+        versionName = "0.2.1-alpha"
     }
     signingConfigs {
         if (releaseStorePath != null) {
