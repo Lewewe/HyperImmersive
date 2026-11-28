@@ -3,7 +3,7 @@
 <div align="center">
   <img src="docs/images/app-icon.png" alt="HyperImmersive app icon" width="128" height="128" />
   <h1>HyperImmersive</h1>
-  <p><strong>iPhone-style StandBy on the HyperOS 4 lock screen.</strong></p>
+  <p><strong>Lay a charging HyperOS 4 phone on its side, and the lock screen becomes an iPhone-style StandBy.</strong></p>
   <p>
     <a href="https://github.com/Lewewe/HyperImmersive/releases"><img alt="Download" src="https://img.shields.io/github/v/release/Lewewe/HyperImmersive?include_prereleases&amp;style=flat-square&amp;label=Download&amp;color=f38caf" /></a>
     <a href="https://t.me/HyperMusicCoverEnhanced"><img alt="Official Telegram group" src="https://img.shields.io/badge/Telegram-Official_group-26A5E4?style=flat-square&amp;logo=telegram" /></a>
@@ -13,19 +13,19 @@
 </div>
 
 > [!IMPORTANT]
-> HyperImmersive is an extension for **[HyperMusicCover-Enhanced](https://github.com/Lewewe/HyperMusicCover-Enhanced)** only, and that app is required. HyperImmersive has no screen of its own: every setting is changed from HyperMusicCover-Enhanced, which also provides the lyrics, visualizer and lock screen backdrop. Without HyperMusicCover-Enhanced, signed with the same key, StandBy does not start.
+> You need **[HyperMusicCover-Enhanced](https://github.com/Lewewe/HyperMusicCover-Enhanced)** to use HyperImmersive. It has no settings screen of its own. You change everything from HyperMusicCover-Enhanced, which also supplies the lyrics, the visualizer and the lock screen backdrop. If HyperMusicCover-Enhanced isn't installed, or isn't signed with the same key as HyperImmersive, StandBy won't start.
 
 ## Features
 
 | | |
 | --- | --- |
-| 🌙 **StandBy** | Opens over the lock screen when the phone charges on its side |
-| 🧩 **Widgets** | Clocks, calendar and more, in pages and stacks you can edit in place |
-| 🎵 **Music page** | Artwork and playback controls, with lyrics and visualizer from HyperMusicCover-Enhanced |
-| 🖼️ **Artwork background** | The playing track's cover, blurred behind StandBy |
-| 🔋 **Status at a glance** | Battery, Wi-Fi and signal gathered into one small glyph |
-| 🛌 **Rest & sleep** | Dims after a while without a touch, then can turn the screen off |
-| 🚫 **No system gestures** | The bars and edge gestures stay out of StandBy, through LSPosed |
+| 🌙 **StandBy** | Comes up over the lock screen when you charge the phone on its side |
+| 🧩 **Widgets** | Clocks, a calendar and more, arranged in pages and stacks you edit right on the screen |
+| 🎵 **Music page** | Cover art and playback controls, plus the lyrics and visualizer from HyperMusicCover-Enhanced |
+| 🖼️ **Artwork background** | The current song's cover, blurred, sits behind everything |
+| 🔋 **Status at a glance** | Battery, Wi-Fi and signal fold into one small glyph |
+| 🛌 **Rest & sleep** | Dims when nobody touches it for a while, and can then turn the screen off |
+| 🚫 **No system gestures** | LSPosed keeps the system bars and edge swipes from getting in the way |
 
 ## Install
 
@@ -35,9 +35,9 @@
 2. Tap **Request hook permissions** and enable HyperImmersive in LSPosed with System UI in its scope.
 3. Tap **Restart hooks to finish setup**.
 4. Open **HyperImmersive** and tap **Grant permissions (root)**.
-5. Charge the phone and turn it on its side while it is locked, or tap **Preview StandBy**.
+5. Lock the phone, plug it in and lay it on its side. To see it right away, tap **Preview StandBy** instead.
 
-All settings live in HyperMusicCover-Enhanced, including **Uninstall HyperImmersive**. The app has no launcher icon.
+There's no launcher icon. Every setting, **Uninstall HyperImmersive** included, is in HyperMusicCover-Enhanced.
 
 ## Build
 
@@ -45,11 +45,11 @@ All settings live in HyperMusicCover-Enhanced, including **Uninstall HyperImmers
 ./gradlew assembleRelease
 ```
 
-Needs Android SDK 37. Sign it with the same key as HyperMusicCover-Enhanced (`keystore.properties`), or the two apps cannot talk to each other and StandBy does not start. Without that file it falls back to the debug key.
+You'll need Android SDK 37. Sign the APK with the key HyperMusicCover-Enhanced uses (`keystore.properties`). With a different key the two apps can't talk to each other, and StandBy won't start. If that file is missing, the build falls back to the debug key.
 
 ## Status
 
-Alpha, tested on Xiaomi 17 Pro. Other devices may behave differently.
+Alpha. It's been tested on a Xiaomi 17 Pro, so other phones may behave differently.
 
 ## Credits
 
